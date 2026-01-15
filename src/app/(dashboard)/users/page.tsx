@@ -131,6 +131,8 @@ export default function UsersPage() {
 
   useEffect(() => {
     fetchUsers();
+    // Scroll to top when page changes
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }, [fetchUsers]);
 
   useEffect(() => {

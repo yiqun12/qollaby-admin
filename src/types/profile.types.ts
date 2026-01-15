@@ -15,3 +15,14 @@ type ProfileBase = {
 
 export type Profile = Models.Document & ProfileBase;
 
+export interface UserSubscriptionInfo {
+  hasSubscription: boolean;
+  planName: string | null;
+  expiresAt: string | null;
+  isExpired: boolean;
+}
+
+export interface UserContentStats {
+  postCount: number;
+  adCount: number;
+}

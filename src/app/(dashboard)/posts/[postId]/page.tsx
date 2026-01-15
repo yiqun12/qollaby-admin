@@ -1,0 +1,569 @@
+"use client";
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { MediaCarousel } from "@/components/ui/media-carousel";
+import { Skeleton } from "@/components/ui/skeleton";
+import { getImageUrl, getVideoUrl, isVideoUrl } from "@/lib/appwrite";
+import { getCategoryLabel, getSubCategoryLabel } from "@/lib/categories";
+import {
+  blacklistPost,
+  getPostById,
+  getPostLikeCount,
+  getPostReportCount,
+  getPostReports,
+  getPostStampCount,
+  Post,
+  Report,
+  unblacklistPost,
+} from "@/lib/user-actions";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Ban,
+  Calendar,
+  CheckCircle,
+  ChevronDown,
+  Clock,
+  ExternalLink,
+  FileText,
+  Hash,
+  Heart,
+  Image as ImageIcon,
+  MapPin,
+  MessageCircle,
+  Play,
+  RefreshCw,
+  Tag,
+  User
+} from "lucide-react";
+import { useParams, useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+
+export default function PostDetailPage() {
+  const params = useParams();
+  const router = useRouter();
+  const postId = params.postId as string;
+
+  const [loading, setLoading] = useState(true);
+  const [post, setPost] = useState<Post | null>(null);
+  const [likeCount, setLikeCount] = useState(0);
+  const [reportCount, setReportCount] = useState(0);
+  const [stampCount, setStampCount] = useState(0);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [blacklistDialog, setBlacklistDialog] = useState(false);
+  const [reportsExpanded, setReportsExpanded] = useState(false);
+
+  const fetchPost = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [postData, likes, reportCnt, stamps, reportsList] = await Promise.all([
+        getPostById(postId),
+        getPostLikeCount(postId),
+        getPostReportCount(postId),
+        getPostStampCount(postId),
+        getPostReports(postId),
+      ]);
+      setPost(postData);
+      setLikeCount(likes);
+      setReportCount(reportCnt);
+      setStampCount(stamps);
+      setReports(reportsList);
+    } catch (error) {
+      console.error("Failed to fetch post:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [postId]);
+
+  useEffect(() => {
+    if (postId) {
+      fetchPost();
+    }
+  }, [postId, fetchPost]);
+
+  const handleBlacklist = async () => {
+    if (!post) return;
+    setActionLoading(true);
+    try {
+      if (post.isBlacklisted) {
+        await unblacklistPost(postId);
+      } else {
+        await blacklistPost(postId);
+      }
+      await fetchPost();
+    } catch (error) {
+      console.error("Failed to update blacklist status:", error);
+    } finally {
+      setActionLoading(false);
+      setBlacklistDialog(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <Skeleton className="h-10 w-10 rounded-lg" />
+          <Skeleton className="h-8 w-48" />
+        </div>
+        <div className="grid gap-6 md:grid-cols-2">
+          <Skeleton className="aspect-square rounded-lg" />
+          <div className="space-y-4">
+            {[...Array(4)].map((_, i) => (
+              <Skeleton key={i} className="h-20 w-full" />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!post) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20">
+        <AlertTriangle className="h-16 w-16 text-muted-foreground mb-4" />
+        <h2 className="text-xl font-semibold mb-2">Post Not Found</h2>
+        <p className="text-muted-foreground mb-6">Could not find the post</p>
+        <Button onClick={() => router.push("/posts")} variant="outline">
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to Posts
+        </Button>
+      </div>
+    );
+  }
+
+  // Process media array - detect videos and get appropriate URLs
+  const rawMedia = post.media || [];
+  const processedMedia = rawMedia.map((item) => {
+    const isVideo = isVideoUrl(item);
+    return {
+      url: isVideo ? getVideoUrl(item) : getImageUrl(item, 800, 800),
+      isVideo,
+    };
+  });
+
+  // Count videos and images
+  const videoCount = processedMedia.filter((m) => m.isVideo).length;
+  const imageCount = processedMedia.filter((m) => !m.isVideo).length;
+
+  // Format category labels
+  const categoryLabel = getCategoryLabel(post.category);
+  const subCategoryLabel = getSubCategoryLabel(post.category, post.subCategory);
+
+  // Format event date
+  const formatEventDate = (dateStr: string | null | undefined) => {
+    if (!dateStr) return null;
+    try {
+      return new Date(dateStr).toLocaleDateString("en-US", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  // Google Maps link - location is [longitude, latitude] array
+  const getGoogleMapsLink = (location: [number, number] | null | undefined) => {
+    if (!location || location.length !== 2) return null;
+    const [lng, lat] = location;
+    return `https://www.google.com/maps?q=${lat},${lng}`;
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => router.push("/posts")}
+            className="bg-secondary/50 border-border/50"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Post Details</h1>
+            <p className="text-muted-foreground">View post information and manage reports</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={fetchPost}
+            className="bg-secondary/50 border-border/50"
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
+          <Button
+            variant={post.isBlacklisted ? "outline" : "destructive"}
+            size="sm"
+            onClick={() => setBlacklistDialog(true)}
+            disabled={actionLoading}
+            className={post.isBlacklisted ? "border-green-500/50 text-green-500 hover:bg-green-500/10" : ""}
+          >
+            {post.isBlacklisted ? (
+              <>
+                <CheckCircle className="h-4 w-4 mr-2" />
+                Unblock Post
+              </>
+            ) : (
+              <>
+                <Ban className="h-4 w-4 mr-2" />
+                Block Post
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+
+      {/* Blacklist warning banner */}
+      {post.isBlacklisted && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 flex items-center gap-3">
+          <Ban className="h-5 w-5 text-red-500 flex-shrink-0" />
+          <div>
+            <p className="font-medium text-red-500">This post is blocked</p>
+            <p className="text-sm text-muted-foreground">
+              This post is hidden from the public feed but visible to the owner.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Content */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* Media gallery */}
+        <Card className="bg-card/50 border-border/50">
+          <CardContent className="pt-6">
+            {processedMedia.length > 0 ? (
+              <>
+                <MediaCarousel media={processedMedia} />
+                {/* Media summary */}
+                <div className="flex items-center justify-center gap-4 mt-3 text-sm text-muted-foreground">
+                  {imageCount > 0 && (
+                    <span className="flex items-center gap-1">
+                      <ImageIcon className="h-4 w-4" />
+                      {imageCount} {imageCount === 1 ? "image" : "images"}
+                    </span>
+                  )}
+                  {videoCount > 0 && (
+                    <span className="flex items-center gap-1">
+                      <Play className="h-4 w-4" />
+                      {videoCount} {videoCount === 1 ? "video" : "videos"}
+                    </span>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="aspect-square rounded-lg bg-secondary/30 flex items-center justify-center">
+                <FileText className="h-16 w-16 text-muted-foreground/50" />
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Stats and info */}
+        <div className="space-y-6">
+          {/* Title and description */}
+          <Card className="bg-card/50 border-border/50">
+            <CardHeader>
+              <CardTitle className="text-lg">Content</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <p className="text-sm text-muted-foreground mb-1">Title</p>
+                <p className="font-medium">{post.title || "Untitled"}</p>
+              </div>
+              {post.smallDescription && (
+                <div>
+                  <p className="text-sm text-muted-foreground mb-1">Summary</p>
+                  <p className="text-sm">{post.smallDescription}</p>
+                </div>
+              )}
+              {post.description && (
+                <div>
+                  <p className="text-sm text-muted-foreground mb-1">Description</p>
+                  <p className="text-sm whitespace-pre-wrap">{post.description}</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Statistics */}
+          <Card className="bg-card/50 border-border/50">
+            <CardHeader>
+              <CardTitle className="text-lg">Statistics</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <StatRow
+                icon={Heart}
+                label="Like Count"
+                value={likeCount}
+                color="text-pink-500"
+              />
+              <StatRow
+                icon={MessageCircle}
+                label="Stamp Count"
+                value={stampCount}
+                color="text-blue-500"
+              />
+              <StatRow
+                icon={AlertTriangle}
+                label="Report Count"
+                value={reportCount}
+                color={reportCount > 0 ? "text-destructive" : "text-muted-foreground"}
+                highlight={reportCount > 0}
+              />
+            </CardContent>
+          </Card>
+
+          {/* Reports Section - Collapsible */}
+          {reports.length > 0 && (
+            <Card className="bg-card/50 border-red-500/30 border">
+              <CardHeader 
+                className="cursor-pointer select-none"
+                onClick={() => setReportsExpanded(!reportsExpanded)}
+              >
+                <CardTitle className="text-lg flex items-center justify-between text-red-500">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="h-5 w-5" />
+                    Reports ({reports.length})
+                  </div>
+                  <ChevronDown className={`h-5 w-5 transition-transform ${reportsExpanded ? "rotate-180" : ""}`} />
+                </CardTitle>
+              </CardHeader>
+              {reportsExpanded && (
+                <CardContent className="space-y-3 pt-0">
+                  {reports.map((report) => (
+                    <div
+                      key={report.$id}
+                      className={`p-3 rounded-lg border ${
+                        report.status === "pending"
+                          ? "bg-red-500/5 border-red-500/30"
+                          : report.status === "reviewed"
+                          ? "bg-yellow-500/5 border-yellow-500/30"
+                          : "bg-secondary/30 border-border/30"
+                      }`}
+                    >
+                      <p className="text-sm font-medium mb-2">{report.reason}</p>
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                        <span>
+                          {new Date(report.$createdAt).toLocaleString("en-US")}
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded text-xs ${
+                            report.status === "pending"
+                              ? "bg-red-500/20 text-red-500"
+                              : report.status === "reviewed"
+                              ? "bg-yellow-500/20 text-yellow-600"
+                              : "bg-secondary text-muted-foreground"
+                          }`}
+                        >
+                          {report.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
+              )}
+            </Card>
+          )}
+
+          {/* Location Info */}
+          {(post.locationAddress || post.userLocationAddress) && (
+            <Card className="bg-card/50 border-border/50">
+              <CardHeader>
+                <CardTitle className="text-lg">Location</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {post.locationAddress && (
+                  <div className="flex items-start justify-between py-3 border-b border-border/30 last:border-0">
+                    <div className="flex items-start gap-3 text-muted-foreground">
+                      <MapPin className="h-4 w-4 mt-0.5 text-green-500" />
+                      <div>
+                        <span className="block text-foreground">Post Location</span>
+                        <span className="text-sm">{post.locationAddress}</span>
+                      </div>
+                    </div>
+                    {post.location && (
+                      <a
+                        href={getGoogleMapsLink(post.location) || "#"}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline flex items-center gap-1 text-sm cursor-pointer"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                        Map
+                      </a>
+                    )}
+                  </div>
+                )}
+                {post.userLocationAddress && (
+                  <div className="flex items-start justify-between py-3 border-b border-border/30 last:border-0">
+                    <div className="flex items-start gap-3 text-muted-foreground">
+                      <User className="h-4 w-4 mt-0.5 text-blue-500" />
+                      <div>
+                        <span className="block text-foreground">User Location</span>
+                        <span className="text-sm">{post.userLocationAddress}</span>
+                      </div>
+                    </div>
+                    {post.userLocation && (
+                      <a
+                        href={getGoogleMapsLink(post.userLocation) || "#"}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline flex items-center gap-1 text-sm cursor-pointer"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                        Map
+                      </a>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Event Date (if exists) */}
+          {post.eventDate && (
+            <Card className="bg-card/50 border-border/50">
+              <CardHeader>
+                <CardTitle className="text-lg">Event</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-3 text-muted-foreground">
+                  <Clock className="h-4 w-4 text-orange-500" />
+                  <div>
+                    <span className="block text-foreground font-medium">Event Date</span>
+                    <span className="text-sm">{formatEventDate(post.eventDate)}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Metadata */}
+          <Card className="bg-card/50 border-border/50">
+            <CardHeader>
+              <CardTitle className="text-lg">Metadata</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <InfoRow icon={Hash} label="Post ID" value={post.$id} mono />
+              <InfoRow icon={Hash} label="User ID" value={post.userId} mono />
+              <InfoRow icon={Tag} label="Category" value={categoryLabel} />
+              <InfoRow icon={Tag} label="Sub Category" value={subCategoryLabel} />
+              <InfoRow icon={FileText} label="Type" value={post.type || "post"} />
+              <InfoRow
+                icon={Calendar}
+                label="Created At"
+                value={new Date(post.$createdAt).toLocaleString("en-US")}
+              />
+              <InfoRow
+                icon={Calendar}
+                label="Updated At"
+                value={new Date(post.$updatedAt).toLocaleString("en-US")}
+              />
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* Blacklist Confirmation Dialog */}
+      <AlertDialog open={blacklistDialog} onOpenChange={setBlacklistDialog}>
+        <AlertDialogContent className="bg-card border-border">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {post.isBlacklisted ? "Unblock this post?" : "Block this post?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {post.isBlacklisted
+                ? "This will make the post visible in the public feed again."
+                : "This will hide the post from the public feed. The owner can still see it on their profile and can submit an appeal."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="bg-secondary/50 border-border/50">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleBlacklist}
+              className={
+                post.isBlacklisted
+                  ? "bg-green-600 hover:bg-green-700"
+                  : "bg-destructive hover:bg-destructive/90"
+              }
+            >
+              {post.isBlacklisted ? "Unblock" : "Block"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+interface StatRowProps {
+  icon: React.ElementType;
+  label: string;
+  value: number;
+  color?: string;
+  highlight?: boolean;
+}
+
+function StatRow({
+  icon: Icon,
+  label,
+  value,
+  color = "text-muted-foreground",
+  highlight,
+}: StatRowProps) {
+  return (
+    <div
+      className={`flex items-center justify-between py-3 border-b border-border/30 last:border-0 ${
+        highlight ? "bg-destructive/5 -mx-4 px-4 rounded-lg" : ""
+      }`}
+    >
+      <div className="flex items-center gap-3 text-muted-foreground">
+        <Icon className={`h-4 w-4 ${color}`} />
+        <span>{label}</span>
+      </div>
+      <span className={`text-lg font-semibold ${color}`}>{value.toLocaleString()}</span>
+    </div>
+  );
+}
+
+interface InfoRowProps {
+  icon: React.ElementType;
+  label: string;
+  value: string;
+  mono?: boolean;
+}
+
+function InfoRow({ icon: Icon, label, value, mono }: InfoRowProps) {
+  return (
+    <div className="flex items-center justify-between py-3 border-b border-border/30 last:border-0">
+      <div className="flex items-center gap-3 text-muted-foreground">
+        <Icon className="h-4 w-4" />
+        <span>{label}</span>
+      </div>
+      <span className={mono ? "font-mono text-sm" : ""}>{value}</span>
+    </div>
+  );
+}

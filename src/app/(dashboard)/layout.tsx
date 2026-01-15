@@ -12,12 +12,18 @@ import {
   Users,
   ChevronLeft,
   ChevronRight,
+  FileText,
+  MessageSquare,
+  Megaphone,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/users", label: "Users", icon: Users },
+  { href: "/posts", label: "Posts", icon: FileText },
+  { href: "/ads", label: "Ads", icon: Megaphone },
+  { href: "/appeals", label: "Appeals", icon: MessageSquare },
 ];
 
 export default function DashboardLayout({
@@ -76,7 +82,7 @@ export default function DashboardLayout({
       {/* Fixed Header */}
       <header className="fixed top-0 left-0 right-0 z-50 h-16 border-b border-border/50 bg-card/95 backdrop-blur-xl">
         <div className="h-full px-4 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-3">
+          <Link href="/" className="flex items-center gap-3 cursor-pointer">
             <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-md shadow-primary/20">
               <Shield className="w-5 h-5 text-primary-foreground" />
             </div>
@@ -127,7 +133,7 @@ export default function DashboardLayout({
                 href={item.href}
                 title={sidebarCollapsed ? item.label : undefined}
                 className={`
-                  flex items-center gap-3 rounded-lg text-sm font-medium transition-all
+                  flex items-center gap-3 rounded-lg text-sm font-medium transition-all cursor-pointer
                   ${sidebarCollapsed ? "px-3 py-2.5 justify-center" : "px-3 py-2.5"}
                   ${
                     active
@@ -156,6 +162,7 @@ export default function DashboardLayout({
             shadow-md
             transition-all duration-200
             z-50
+            cursor-pointer
           `}
         >
           {sidebarCollapsed ? (
