@@ -188,17 +188,17 @@ export default function PostDetailPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => router.push("/posts")}
-            className="bg-secondary/50 border-border/50"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Post Details</h1>
+      <div className="flex items-center gap-4">
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => router.push("/posts")}
+          className="bg-secondary/50 border-border/50"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Post Details</h1>
             <p className="text-muted-foreground">View post information and manage reports</p>
           </div>
         </div>
@@ -253,7 +253,7 @@ export default function PostDetailPage() {
         <Card className="bg-card/50 border-border/50">
           <CardContent className="pt-6">
             {processedMedia.length > 0 ? (
-              <>
+                <>
                 <MediaCarousel media={processedMedia} />
                 {/* Media summary */}
                 <div className="flex items-center justify-center gap-4 mt-3 text-sm text-muted-foreground">
@@ -269,12 +269,12 @@ export default function PostDetailPage() {
                       {videoCount} {videoCount === 1 ? "video" : "videos"}
                     </span>
                   )}
-                </div>
-              </>
-            ) : (
+                      </div>
+                </>
+              ) : (
               <div className="aspect-square rounded-lg bg-secondary/30 flex items-center justify-center">
-                <FileText className="h-16 w-16 text-muted-foreground/50" />
-              </div>
+                  <FileText className="h-16 w-16 text-muted-foreground/50" />
+                </div>
             )}
           </CardContent>
         </Card>
@@ -320,7 +320,7 @@ export default function PostDetailPage() {
               />
               <StatRow
                 icon={MessageCircle}
-                label="Stamp Count"
+                label="Community Count"
                 value={stampCount}
                 color="text-blue-500"
               />
