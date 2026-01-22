@@ -105,6 +105,8 @@ export const Collections = {
   SPONSOR_ADS: "sponsor_ads",
   AD_LIKES: "ad_likes",
   PUSH_TOKENS: "push_tokens",
+  CATEGORIES: "category",
+  LOCATIONS: "locations",
 } as const;
 
 export { Query };

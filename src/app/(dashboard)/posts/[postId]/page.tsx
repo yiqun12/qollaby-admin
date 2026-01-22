@@ -23,10 +23,12 @@ import {
   getPostReportCount,
   getPostReports,
   getPostStampCount,
+  getUserByUserId,
   Post,
   Report,
   unblacklistPost,
 } from "@/lib/user-actions";
+import { Profile } from "@/types/profile.types";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -57,6 +59,7 @@ export default function PostDetailPage() {
 
   const [loading, setLoading] = useState(true);
   const [post, setPost] = useState<Post | null>(null);
+  const [userProfile, setUserProfile] = useState<Profile | null>(null);
   const [likeCount, setLikeCount] = useState(0);
   const [reportCount, setReportCount] = useState(0);
   const [stampCount, setStampCount] = useState(0);
@@ -80,6 +83,12 @@ export default function PostDetailPage() {
       setReportCount(reportCnt);
       setStampCount(stamps);
       setReports(reportsList);
+      
+      // Fetch user profile
+      if (postData?.userId) {
+        const profile = await getUserByUserId(postData.userId);
+        setUserProfile(profile);
+      }
     } catch (error) {
       console.error("Failed to fetch post:", error);
     } finally {
@@ -287,6 +296,21 @@ export default function PostDetailPage() {
               <CardTitle className="text-lg">Content</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* User Info */}
+              <div>
+                <p className="text-sm text-muted-foreground mb-1">User Name</p>
+                <p className="font-medium">
+                  {userProfile 
+                    ? `${userProfile.firstName} ${userProfile.lastName}`.trim() || "Unknown"
+                    : "Loading..."}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground mb-1">Email</p>
+                <p className="font-medium text-primary">
+                  {userProfile?.email || "N/A"}
+                </p>
+              </div>
               <div>
                 <p className="text-sm text-muted-foreground mb-1">Title</p>
                 <p className="font-medium">{post.title || "Untitled"}</p>

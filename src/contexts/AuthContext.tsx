@@ -59,7 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const adminUser = await loginWithEmail(email, password);
       setAdmin(adminUser);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "登录失败";
+      const message = err instanceof Error ? err.message : "Login failed";
       setError(message);
       throw err;
     } finally {
@@ -81,7 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const adminUser = await handleOAuthCallback();
       setAdmin(adminUser);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "OAuth 登录失败";
+      const message = err instanceof Error ? err.message : "OAuth login failed";
       setError(message);
       throw err;
     } finally {

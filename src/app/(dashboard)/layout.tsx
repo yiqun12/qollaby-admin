@@ -15,6 +15,9 @@ import {
   FileText,
   MessageSquare,
   Megaphone,
+  FolderTree,
+  CreditCard,
+  MapPin,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -23,7 +26,10 @@ const navItems = [
   { href: "/users", label: "Users", icon: Users },
   { href: "/posts", label: "Posts", icon: FileText },
   { href: "/ads", label: "Ads", icon: Megaphone },
+  { href: "/subscriptions", label: "Subscriptions", icon: CreditCard },
   { href: "/appeals", label: "Appeals", icon: MessageSquare },
+  { href: "/categories", label: "Categories", icon: FolderTree },
+  { href: "/locations", label: "Locations", icon: MapPin },
 ];
 
 export default function DashboardLayout({
