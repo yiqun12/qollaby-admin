@@ -17,15 +17,15 @@ import {
   Megaphone,
   FolderTree,
   MapPin,
-  UserPlus,
   TrendingUp,
+  CreditCard,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/users", label: "Users", icon: Users },
-  { href: "/active-users", label: "Active Users", icon: UserPlus },
+  { href: "/subscriptions", label: "Subscriptions", icon: CreditCard },
   { href: "/posts", label: "Posts", icon: FileText },
   { href: "/ads", label: "Ads", icon: Megaphone },
   { href: "/conversions", label: "Conversions", icon: TrendingUp },
