@@ -64,11 +64,11 @@ const getStateFullName = (stateCode: string): string => {
 type PostOrExchange = Post | ExchangeListing;
 
 // Extended post type with computed stats
-interface ItemWithStats extends PostOrExchange {
+type ItemWithStats = PostOrExchange & {
   computedLikeCount: number;
   computedReportCount: number;
   computedStampCount: number;
-}
+};
 
 export default function PostsPage() {
   const router = useRouter();
