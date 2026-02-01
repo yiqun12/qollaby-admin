@@ -1570,6 +1570,7 @@ export interface SponsorAdListParams {
   city?: string;
   category?: string;
   subcategory?: string;
+  isAdminCreated?: boolean; // Filter by admin-created ads (true = admin, false = user)
 }
 
 export interface SponsorAdListResult {
@@ -1618,7 +1619,7 @@ export async function getAdminAdsBySlot(): Promise<Map<number, SponsorAd[]>> {
  * Get paginated list of sponsor ads
  */
 export async function getSponsorAds(params: SponsorAdListParams = {}): Promise<SponsorAdListResult> {
-  const { page = 1, limit = 20, search, status = "all", state, city, category, subcategory } = params;
+  const { page = 1, limit = 20, search, status = "all", state, city, category, subcategory, isAdminCreated } = params;
   const offset = (page - 1) * limit;
 
   try {
@@ -1638,6 +1639,23 @@ export async function getSponsorAds(params: SponsorAdListParams = {}): Promise<S
     if (search && search.trim()) {
       queries.push(Query.contains("title", search.trim()));
       countQueries.push(Query.contains("title", search.trim()));
+    }
+
+    // Filter by admin/user created
+    if (isAdminCreated === true) {
+      // Only admin-created ads
+      queries.push(Query.equal("isAdminCreated", true));
+      countQueries.push(Query.equal("isAdminCreated", true));
+    } else if (isAdminCreated === false) {
+      // User ads: either isAdminCreated is false OR field is null (old ads without this field)
+      queries.push(Query.or([
+        Query.isNull("isAdminCreated"),
+        Query.equal("isAdminCreated", false)
+      ]));
+      countQueries.push(Query.or([
+        Query.isNull("isAdminCreated"),
+        Query.equal("isAdminCreated", false)
+      ]));
     }
 
     // Filter by state
@@ -1708,28 +1726,42 @@ export async function getSponsorAdById(adId: string): Promise<SponsorAd | null> 
 
 /**
  * Get sponsor ads stats
+ * @param isAdminCreated - undefined: all ads, true: admin ads only, false: user ads only
  */
-export async function getSponsorAdStats(): Promise<{
+export async function getSponsorAdStats(isAdminCreated?: boolean): Promise<{
   totalAds: number;
   activeAds: number;
   pendingAds: number;
 }> {
   try {
+    // Base queries for filtering by admin/user
+    const baseQueries: string[] = [];
+    if (isAdminCreated === true) {
+      // Only admin-created ads
+      baseQueries.push(Query.equal("isAdminCreated", true));
+    } else if (isAdminCreated === false) {
+      // User ads: either isAdminCreated is false OR field is null
+      baseQueries.push(Query.or([
+        Query.isNull("isAdminCreated"),
+        Query.equal("isAdminCreated", false)
+      ]));
+    }
+
     const [totalRes, activeRes, pendingRes] = await Promise.all([
       databases.listDocuments(
         process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!,
         Collections.SPONSOR_ADS,
-        [Query.limit(1)]
+        [...baseQueries, Query.limit(1)]
       ),
       databases.listDocuments(
         process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!,
         Collections.SPONSOR_ADS,
-        [Query.equal("status", "active"), Query.limit(1)]
+        [...baseQueries, Query.equal("status", "active"), Query.limit(1)]
       ),
       databases.listDocuments(
         process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!,
         Collections.SPONSOR_ADS,
-        [Query.equal("status", "pending"), Query.limit(1)]
+        [...baseQueries, Query.equal("status", "pending"), Query.limit(1)]
       ),
     ]);
 
