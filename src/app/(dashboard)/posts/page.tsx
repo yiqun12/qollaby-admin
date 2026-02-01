@@ -5,7 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import LocationPicker, { PlaceValue } from "@/components/ui/location-picker";
+import { RadiusSelector } from "@/components/ui/radius-selector";
 import { getImageUrl, getVideoUrl, isVideoUrl } from "@/lib/appwrite";
+import { calculateDistance, formatDistance, RadiusOption } from "@/lib/geo-utils";
 import {
   getPosts,
   getExchangeListings,
@@ -40,16 +42,17 @@ import {
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 // Combined type for Post and ExchangeListing display
 type PostOrExchange = Post | ExchangeListing;
 
-// Extended post type with computed stats
+// Extended post type with computed stats and distance
 type ItemWithStats = PostOrExchange & {
   computedLikeCount: number;
   computedReportCount: number;
   computedStampCount: number;
+  computedDistance?: number; // Distance in km from search center
 };
 
 export default function PostsPage() {
@@ -72,6 +75,9 @@ export default function PostsPage() {
   
   // Location picker
   const [selectedLocation, setSelectedLocation] = useState<PlaceValue | null>(null);
+  
+  // Radius filter for distance-based search
+  const [searchRadius, setSearchRadius] = useState<RadiusOption>(0);
   
   // Category filters
   const [categoryFilter, setCategoryFilter] = useState("");
@@ -235,8 +241,36 @@ export default function PostsPage() {
   const selectedCategory = categories.find((c) => c.value === categoryFilter);
   const subcategories = selectedCategory?.subCategories || [];
 
-  // Count active filters
-  const activeFilterCount = [stateFilter, cityFilter, categoryFilter, subcategoryFilter].filter(Boolean).length;
+  // Count active filters (include radius if set)
+  const activeFilterCount = [stateFilter, cityFilter, categoryFilter, subcategoryFilter].filter(Boolean).length + (searchRadius > 0 ? 1 : 0);
+
+  // Filter items by distance if a location and radius are selected
+  const filteredItems = useMemo(() => {
+    // If no location or radius is 0 (any distance), return all items
+    if (!selectedLocation || searchRadius === 0) {
+      return items;
+    }
+
+    const { latitude: centerLat, longitude: centerLng } = selectedLocation;
+
+    return items
+      .map((item) => {
+        // Get location from post - stored as [longitude, latitude]
+        const postLocation = (item as Post).location;
+        
+        if (!postLocation || postLocation.length !== 2) {
+          // No location data, set distance to Infinity so it gets filtered out
+          return { ...item, computedDistance: Infinity };
+        }
+
+        const [lng, lat] = postLocation;
+        const distance = calculateDistance(centerLat, centerLng, lat, lng);
+        
+        return { ...item, computedDistance: distance };
+      })
+      .filter((item) => item.computedDistance <= searchRadius)
+      .sort((a, b) => (a.computedDistance ?? Infinity) - (b.computedDistance ?? Infinity));
+  }, [items, selectedLocation, searchRadius]);
 
   // Clear all filters
   const clearFilters = () => {
@@ -245,6 +279,7 @@ export default function PostsPage() {
     setCategoryFilter("");
     setSubcategoryFilter("");
     setSelectedLocation(null);
+    setSearchRadius(0);
   };
 
   // Handle location change - auto apply filter
@@ -398,10 +433,10 @@ export default function PostsPage() {
           {/* Expandable filters panel */}
           {showFilters && (
             <div className="pt-4 border-t border-border/30 space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 {/* Location filter - inline picker */}
                 <div className="space-y-1.5 sm:col-span-2">
-                  <label className="text-xs font-medium text-muted-foreground">Location (State required)</label>
+                  <label className="text-xs font-medium text-muted-foreground">Location</label>
                   <LocationPicker
                     value={selectedLocation}
                     onChange={handleLocationChange}
@@ -409,6 +444,19 @@ export default function PostsPage() {
                     countryRestriction="us"
                     showCurrentLocation={false}
                   />
+                </div>
+
+                {/* Radius filter */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">Search Radius</label>
+                  <RadiusSelector
+                    value={searchRadius}
+                    onChange={setSearchRadius}
+                    disabled={!selectedLocation}
+                  />
+                  {!selectedLocation && searchRadius === 0 && (
+                    <p className="text-xs text-muted-foreground/70">Select a location first</p>
+                  )}
                 </div>
 
                 {/* Category filter */}
@@ -474,18 +522,23 @@ export default function PostsPage() {
                 </div>
               ))}
             </div>
-          ) : items.length === 0 ? (
+          ) : filteredItems.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>No {typeFilter === "exchange" ? "exchange listings" : "posts"} found</p>
+              <p>
+                {searchRadius > 0 && selectedLocation
+                  ? `No ${typeFilter === "exchange" ? "exchange listings" : "posts"} found within ${searchRadius} miles`
+                  : `No ${typeFilter === "exchange" ? "exchange listings" : "posts"} found`}
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {items.map((item) => (
+              {filteredItems.map((item) => (
                 <PostCard
                   key={item.$id}
                   post={item}
                   onClick={() => router.push(typeFilter === "exchange" ? `/posts/${item.$id}?type=exchange` : `/posts/${item.$id}`)}
+                  showDistance={searchRadius > 0 && selectedLocation !== null}
                 />
               ))}
             </div>
@@ -495,7 +548,10 @@ export default function PostsPage() {
           {!loading && totalPages > 1 && (
             <div className="flex items-center justify-between mt-6 pt-4 border-t border-border/30">
               <p className="text-sm text-muted-foreground">
-                {total} posts total, page {page} of {totalPages}
+                {searchRadius > 0 && selectedLocation
+                  ? `${filteredItems.length} of ${total} posts within ${searchRadius} mi`
+                  : `${total} posts total`}
+                , page {page} of {totalPages}
               </p>
               <div className="flex gap-2">
                 <Button
@@ -529,9 +585,10 @@ export default function PostsPage() {
 interface PostCardProps {
   post: ItemWithStats;
   onClick: () => void;
+  showDistance?: boolean;
 }
 
-function PostCard({ post, onClick }: PostCardProps) {
+function PostCard({ post, onClick, showDistance = false }: PostCardProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isHovering, setIsHovering] = useState(false);
   const [imgError, setImgError] = useState(false);
@@ -656,22 +713,30 @@ function PostCard({ post, onClick }: PostCardProps) {
       <div className="p-2">
         <p className="text-sm font-medium truncate mb-1">{post.title || "Untitled"}</p>
         <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <div className="flex items-center gap-2">
-          <span className="flex items-center gap-1">
-            <Heart className="h-3 w-3" />
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1">
+              <Heart className="h-3 w-3" />
               {post.computedLikeCount}
-          </span>
-          <span className="flex items-center gap-1">
+            </span>
+            <span className="flex items-center gap-1">
               <MessageCircle className="h-3 w-3" />
               {post.computedStampCount}
-          </span>
-        </div>
-          {post.computedReportCount > 0 && (
-          <span className="flex items-center gap-1 text-destructive">
-            <AlertTriangle className="h-3 w-3" />
-              {post.computedReportCount}
-          </span>
-        )}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            {/* Distance badge */}
+            {showDistance && post.computedDistance !== undefined && post.computedDistance !== Infinity && (
+              <span className="flex items-center gap-0.5 text-primary font-medium">
+                📍 {formatDistance(post.computedDistance)}
+              </span>
+            )}
+            {post.computedReportCount > 0 && (
+              <span className="flex items-center gap-1 text-destructive">
+                <AlertTriangle className="h-3 w-3" />
+                {post.computedReportCount}
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </div>
