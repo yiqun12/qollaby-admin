@@ -27,7 +27,6 @@ import {
   AlertTriangle,
   Ban,
   Calendar,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   FileText,
@@ -83,8 +82,7 @@ export default function PostsPage() {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [subcategoryFilter, setSubcategoryFilter] = useState("");
   
-  // Show filters panel
-  const [showFilters, setShowFilters] = useState(false);
+  // Filters are always shown
 
   const fetchItems = useCallback(async () => {
     console.log("[PostsPage] fetchItems called with filters:", {
@@ -412,27 +410,11 @@ export default function PostsPage() {
                 <Repeat className="h-4 w-4 mr-1" />
                 Exchange
               </Button>
-              {/* Filter toggle button */}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowFilters(!showFilters)}
-                className={`bg-secondary/50 border-border/50 ${activeFilterCount > 0 ? "border-primary text-primary" : ""}`}
-              >
-                <ChevronDown className={`h-4 w-4 mr-1 transition-transform ${showFilters ? "rotate-180" : ""}`} />
-                Filters
-                {activeFilterCount > 0 && (
-                  <span className="ml-1 px-1.5 py-0.5 text-xs bg-primary text-primary-foreground rounded-full">
-                    {activeFilterCount}
-                  </span>
-                )}
-              </Button>
             </div>
           </div>
 
-          {/* Expandable filters panel */}
-          {showFilters && (
-            <div className="pt-4 border-t border-border/30 space-y-4">
+          {/* Filters panel - always visible */}
+          <div className="pt-4 border-t border-border/30 space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 {/* Location filter - inline picker */}
                 <div className="space-y-1.5 sm:col-span-2">
@@ -505,8 +487,7 @@ export default function PostsPage() {
                   </Button>
                 </div>
               )}
-            </div>
-          )}
+          </div>
         </CardContent>
       </Card>
 
