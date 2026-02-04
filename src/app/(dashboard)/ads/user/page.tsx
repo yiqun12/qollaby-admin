@@ -21,7 +21,6 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
-  ChevronDown,
   RefreshCw,
   Heart,
   Eye,
@@ -57,7 +56,6 @@ export default function UserAdsPage() {
   const [filterStates, setFilterStates] = useState<string[]>([]);
   const [filterCities, setFilterCities] = useState<Location[]>([]);
   const [loadingFilterCities, setLoadingFilterCities] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
 
   const fetchAds = useCallback(async () => {
     setLoading(true);
@@ -267,21 +265,11 @@ export default function UserAdsPage() {
                 <option value="expired">Expired</option>
                 <option value="rejected">Rejected</option>
               </select>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowFilters(!showFilters)}
-                className={`bg-input/50 border-border/50 ${activeFilterCount > 0 ? 'border-primary text-primary' : ''}`}
-              >
-                <ChevronDown className={`h-4 w-4 mr-1 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
-                Filters {activeFilterCount > 0 && `(${activeFilterCount})`}
-              </Button>
             </div>
           </div>
 
-          {/* Expanded Filters */}
-          {showFilters && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6 p-4 rounded-lg bg-secondary/20 border border-border/30">
+          {/* Filters - always visible */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6 p-4 rounded-lg bg-secondary/20 border border-border/30">
               <select
                 value={stateFilter}
                 onChange={(e) => setStateFilter(e.target.value)}
@@ -335,8 +323,7 @@ export default function UserAdsPage() {
                   Clear
                 </Button>
               )}
-            </div>
-          )}
+          </div>
 
           {/* Ads Grid */}
           {loading ? (
