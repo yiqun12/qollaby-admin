@@ -63,6 +63,7 @@ import {
 interface CreateAdForm {
   title: string;
   description: string;
+  externalLink: string;
   location: PlaceValue | null;
   locationConfirmed: boolean;
   state: string;
@@ -77,6 +78,7 @@ interface CreateAdForm {
 const initialFormState: CreateAdForm = {
   title: "",
   description: "",
+  externalLink: "",
   location: null,
   locationConfirmed: false,
   state: "",
@@ -91,6 +93,7 @@ const initialFormState: CreateAdForm = {
 interface EditAdForm {
   title: string;
   description: string;
+  externalLink: string;
   state: string;
   city: string;
   category: string;
@@ -123,6 +126,7 @@ export default function AdminAdsPage() {
   const [editForm, setEditForm] = useState<EditAdForm>({
     title: "",
     description: "",
+    externalLink: "",
     state: "",
     city: "",
     category: "",
@@ -299,6 +303,7 @@ export default function AdminAdsPage() {
         userId: admin.profile.userId,
         title: createForm.title,
         description: createForm.description || undefined,
+        externalLink: createForm.externalLink || undefined,
         media: mediaIds,
         state: createForm.state,
         city: createForm.city,
@@ -370,6 +375,7 @@ export default function AdminAdsPage() {
     setEditForm({
       title: ad.title,
       description: ad.description || "",
+      externalLink: ad.externalLink || "",
       state: ad.state,
       city: ad.city,
       category: ad.category,
@@ -403,6 +409,7 @@ export default function AdminAdsPage() {
       await updateSponsorAd(editingAd.$id, {
         title: editForm.title,
         description: editForm.description || undefined,
+        externalLink: editForm.externalLink || undefined,
         state: editForm.state,
         city: editForm.city,
         category: editForm.category,
@@ -519,13 +526,13 @@ export default function AdminAdsPage() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="grid grid-cols-5 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-5">
               {AD_SLOTS.map((slot) => (
                 <Skeleton key={slot} className="aspect-[3/4] rounded-lg" />
               ))}
             </div>
           ) : (
-            <div className="grid grid-cols-5 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-5">
               {AD_SLOTS.map((displaySlot) => {
                 const storedSlot = displaySlot - 1;
                 const adsInSlot = adminAdsBySlot.get(storedSlot) || [];
@@ -543,12 +550,12 @@ export default function AdminAdsPage() {
                           const firstMedia = ad.media?.[0] || ad.image || "";
                           const mediaUrl = isVideoUrl(firstMedia) 
                             ? getVideoUrl(firstMedia) 
-                            : getImageUrl(firstMedia, 200, 200);
+                            : getImageUrl(firstMedia, 300, 400);
                           
                           return (
                             <div
                               key={ad.$id}
-                              className="absolute inset-0 rounded-lg overflow-hidden border-2 border-white/20 shadow-lg transition-transform group-hover:shadow-xl"
+                              className="absolute inset-0 rounded-xl overflow-hidden border-2 border-white/20 shadow-lg transition-transform group-hover:shadow-xl"
                             >
                               <img
                                 src={mediaUrl}
@@ -559,13 +566,13 @@ export default function AdminAdsPage() {
                           );
                         })}
                         
-                        <div className="absolute top-1 left-1 z-10 px-1.5 py-0.5 rounded bg-black/70 text-white text-xs font-bold shadow">
+                        <div className="absolute top-2 left-2 z-10 px-2 py-1 rounded-md bg-black/70 text-white text-sm font-bold shadow">
                           {displaySlot}
                         </div>
                       </div>
                     ) : (
-                      <div className="w-full h-full rounded-lg border-2 border-dashed border-slate-500/40 bg-slate-500/10 text-slate-400 hover:border-slate-400 hover:bg-slate-500/20 flex flex-col items-center justify-center gap-1 transition-colors">
-                        <span className="text-2xl sm:text-3xl font-bold">{displaySlot}</span>
+                      <div className="w-full h-full rounded-xl border-2 border-dashed border-slate-500/40 bg-slate-500/10 text-slate-400 hover:border-slate-400 hover:bg-slate-500/20 flex flex-col items-center justify-center gap-1 transition-colors">
+                        <span className="text-3xl sm:text-4xl font-bold">{displaySlot}</span>
                       </div>
                     )}
                   </button>
@@ -774,6 +781,21 @@ export default function AdminAdsPage() {
               />
             </div>
 
+            {/* External Link */}
+            <div className="space-y-2">
+              <Label htmlFor="externalLink" className="text-sm font-medium">
+                External Link
+              </Label>
+              <Input
+                id="externalLink"
+                type="url"
+                placeholder="https://example.com (optional)"
+                value={createForm.externalLink}
+                onChange={(e) => setCreateForm((prev) => ({ ...prev, externalLink: e.target.value }))}
+                className="bg-input/50 border-border/50"
+              />
+            </div>
+
             {/* Location Search */}
             <div className="space-y-3">
               <LocationPicker
@@ -977,6 +999,19 @@ export default function AdminAdsPage() {
                 value={editForm.description}
                 onChange={(e) => setEditForm((prev) => ({ ...prev, description: e.target.value }))}
                 className="w-full min-h-[80px] px-3 py-2 rounded-md bg-input/50 border border-border/50 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/50"
+              />
+            </div>
+
+            {/* External Link */}
+            <div className="space-y-2">
+              <Label htmlFor="edit-externalLink">External Link</Label>
+              <Input
+                id="edit-externalLink"
+                type="url"
+                placeholder="https://example.com"
+                value={editForm.externalLink}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, externalLink: e.target.value }))}
+                className="bg-input/50 border-border/50"
               />
             </div>
 

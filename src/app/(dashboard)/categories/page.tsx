@@ -6,11 +6,9 @@ import {
   updateCategory,
   deleteCategory,
   createCategory,
-  getSubcategorySponsorAds,
   getCategoryUsageStats,
   getMainCategoryUsageStats,
   Category,
-  AdSlotUser,
   CategoryUsageStats,
 } from "@/lib/category-actions";
 import { Button } from "@/components/ui/button";
@@ -42,7 +40,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Label } from "@/components/ui/label";
 import {
@@ -58,11 +55,7 @@ import {
   RefreshCw,
   Plus,
   Megaphone,
-  User,
-  Crown,
-  Sparkles,
 } from "lucide-react";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 export default function CategoriesPage() {
   const [loading, setLoading] = useState(true);
@@ -91,10 +84,6 @@ export default function CategoriesPage() {
   const [createParentId, setCreateParentId] = useState("");  // Store parent category value
   const [createOrder, setCreateOrder] = useState(1);
   const [creating, setCreating] = useState(false);
-
-  // Sponsor ads state
-  const [sponsorAdsMap, setSponsorAdsMap] = useState<Map<string, AdSlotUser[]>>(new Map());
-  const [loadingAds, setLoadingAds] = useState<Set<string>>(new Set());
 
   // Error state for name validation
   const [editNameError, setEditNameError] = useState("");
@@ -159,42 +148,6 @@ export default function CategoriesPage() {
       return newSet;
     });
   };
-
-  // Load sponsor ads for a subcategory
-  const loadSponsorAds = async (categoryValue: string, subcategoryValue: string) => {
-    const key = `${categoryValue}:${subcategoryValue}`;
-    
-    // Skip if already loaded or loading
-    if (sponsorAdsMap.has(key) || loadingAds.has(key)) return;
-    
-    setLoadingAds((prev) => new Set([...prev, key]));
-    try {
-      const ads = await getSubcategorySponsorAds(categoryValue, subcategoryValue);
-      setSponsorAdsMap((prev) => new Map(prev).set(key, ads));
-    } catch (error) {
-      console.error("Failed to load sponsor ads:", error);
-    } finally {
-      setLoadingAds((prev) => {
-        const newSet = new Set(prev);
-        newSet.delete(key);
-        return newSet;
-      });
-    }
-  };
-
-  // Load ads when a category is expanded
-  useEffect(() => {
-    expandedCategories.forEach((categoryValue) => {
-      const subcats = getSubcategories(categoryValue);
-      subcats.forEach((sub) => {
-        // Find parent category
-        const parentCat = mainCategories.find((c) => c.value === categoryValue);
-        if (parentCat) {
-          loadSponsorAds(parentCat.value, sub.value);
-        }
-      });
-    });
-  }, [expandedCategories, categories]);
 
   const openEditDialog = (category: Category) => {
     setEditName(category.name);
@@ -579,159 +532,52 @@ export default function CategoriesPage() {
                       
                       {/* Subcategory rows */}
                       {isExpanded &&
-                        subcategories.map((sub) => {
-                          const adsKey = `${category.value}:${sub.value}`;
-                          const ads = sponsorAdsMap.get(adsKey) || [];
-                          const isLoadingAds = loadingAds.has(adsKey);
-                          
-                          return (
-                            <React.Fragment key={sub.$id}>
-                              <TableRow
-                                className="border-border/30 hover:bg-secondary/30 bg-secondary/10"
-                              >
-                                <TableCell>
-                                  <div className="flex items-center gap-3 pl-10">
-                                    <div className="h-7 w-7 rounded flex items-center justify-center bg-muted">
-                                      <span className="text-xs font-medium">
-                                        {sub.name[0]?.toUpperCase()}
-                                      </span>
-                                    </div>
-                                    <div>
-                                      <p className="text-sm">{sub.name}</p>
-                                      {ads.length > 0 && (
-                                        <p className="text-xs text-muted-foreground">
-                                          {ads.length} sponsor{ads.length > 1 ? "s" : ""}
-                                        </p>
-                                      )}
-                                    </div>
-                                  </div>
-                                </TableCell>
-                                <TableCell className="text-muted-foreground text-sm">
-                                  {sub.order}
-                                </TableCell>
-                                <TableCell>
-                                  <div className="flex items-center gap-1">
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-8 w-8 hover:bg-secondary"
-                                      onClick={() => openEditDialog(sub)}
-                                      disabled={actionLoading === sub.$id}
-                                    >
-                                      {actionLoading === sub.$id ? (
-                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                      ) : (
-                                        <Pencil className="h-4 w-4" />
-                                      )}
-                                    </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive"
-                                      onClick={() => openDeleteDialog(sub)}
-                                      disabled={actionLoading === sub.$id}
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  </div>
-                                </TableCell>
-                              </TableRow>
-                              
-                              {/* Sponsor Ads for this subcategory */}
-                              {isLoadingAds ? (
-                                <TableRow className="border-border/20 bg-gradient-to-r from-amber-500/5 to-transparent">
-                                  <TableCell colSpan={3} className="py-3">
-                                    <div className="flex items-center gap-2 pl-16">
-                                      <Loader2 className="h-4 w-4 animate-spin text-amber-500" />
-                                      <span className="text-xs text-muted-foreground">Loading sponsors...</span>
-                                    </div>
-                                  </TableCell>
-                                </TableRow>
-                              ) : ads.length > 0 && (
-                                ads.map((adSlot) => (
-                                  <TableRow
-                                    key={adSlot.ad.$id}
-                                    className="border-border/20 bg-gradient-to-r from-amber-500/5 to-transparent hover:from-amber-500/10"
-                                  >
-                                    <TableCell colSpan={2}>
-                                      <div className="flex items-center gap-3 pl-16">
-                                        {/* User Avatar */}
-                                        <Avatar className="h-8 w-8 border-2 border-amber-500/30">
-                                          {adSlot.user?.avatar ? (
-                                            <AvatarImage src={adSlot.user.avatar} alt={adSlot.user.firstName} />
-                                          ) : null}
-                                          <AvatarFallback className="bg-amber-500/10 text-amber-600 text-xs">
-                                            {adSlot.user ? (
-                                              `${adSlot.user.firstName[0] || ""}${adSlot.user.lastName[0] || ""}`
-                                            ) : (
-                                              <User className="h-4 w-4" />
-                                            )}
-                                          </AvatarFallback>
-                                        </Avatar>
-                                        
-                                        {/* User Info */}
-                                        <div className="flex-1 min-w-0">
-                                          <div className="flex items-center gap-2">
-                                              <span className="text-sm font-medium truncate">
-                                                {adSlot.user 
-                                                 ? `${adSlot.user.firstName} ${adSlot.user.lastName}`.trim() || "Premium Ad"
-                                                 : "Premium Ad"
-                                                }
-                                              </span>
-                                            {/* Plan Badge */}
-                                            {adSlot.plan && (
-                                              <Badge 
-                                                variant="secondary" 
-                                                className={`text-[10px] px-1.5 py-0 ${
-                                                  adSlot.plan.name.toLowerCase().includes("dominion")
-                                                    ? "bg-red-500/10 text-red-500 border-red-500/20"
-                                                    : adSlot.plan.name.toLowerCase().includes("professional")
-                                                    ? "bg-blue-500/10 text-blue-500 border-blue-500/20"
-                                                    : "bg-green-500/10 text-green-500 border-green-500/20"
-                                                }`}
-                                              >
-                                                {adSlot.plan.name.toLowerCase().includes("dominion") && (
-                                                  <Crown className="h-3 w-3 mr-0.5" />
-                                                )}
-                                                {adSlot.plan.name.toLowerCase().includes("professional") && (
-                                                  <Sparkles className="h-3 w-3 mr-0.5" />
-                                                )}
-                                                {adSlot.plan.name}
-                                              </Badge>
-                                            )}
-                                          </div>
-                                            {adSlot.user?.email && (
-                                              <p className="text-xs text-muted-foreground truncate">
-                                                {adSlot.user.email}
-                                              </p>
-                                            )}
-                                        </div>
-                                      </div>
-                                    </TableCell>
-                                    <TableCell>
-                                      {/* Slot Position */}
-                                      <Badge 
-                                        variant="outline" 
-                                        className={`text-xs ${
-                                          adSlot.ad.slot === 0 || adSlot.ad.slot === 9 || adSlot.ad.slot === 19
-                                            ? "bg-red-500/10 text-red-500 border-red-500/30"
-                                            : "bg-amber-500/10 text-amber-600 border-amber-500/30"
-                                        }`}
-                                      >
-                                        {adSlot.slotLabel}
-                                      </Badge>
-                                    </TableCell>
-                                    {/* <TableCell>
-                                      <span className="text-xs text-muted-foreground">
-                                        Slot #{adSlot.ad.slot}
-                                      </span>
-                                    </TableCell> */}
-                                  </TableRow>
-                                ))
-                              )}
-                            </React.Fragment>
-                          );
-                        })}
+                        subcategories.map((sub) => (
+                          <TableRow
+                            key={sub.$id}
+                            className="border-border/30 hover:bg-secondary/30 bg-secondary/10"
+                          >
+                            <TableCell>
+                              <div className="flex items-center gap-3 pl-10">
+                                <div className="h-7 w-7 rounded flex items-center justify-center bg-muted">
+                                  <span className="text-xs font-medium">
+                                    {sub.name[0]?.toUpperCase()}
+                                  </span>
+                                </div>
+                                <p className="text-sm">{sub.name}</p>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-muted-foreground text-sm">
+                              {sub.order}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 hover:bg-secondary"
+                                  onClick={() => openEditDialog(sub)}
+                                  disabled={actionLoading === sub.$id}
+                                >
+                                  {actionLoading === sub.$id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Pencil className="h-4 w-4" />
+                                  )}
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive"
+                                  onClick={() => openDeleteDialog(sub)}
+                                  disabled={actionLoading === sub.$id}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
                     </React.Fragment>
                   );
                 })

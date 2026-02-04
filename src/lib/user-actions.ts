@@ -1982,6 +1982,7 @@ export async function updateSponsorAdSlot(
 export interface UpdateSponsorAdInput {
   title?: string;
   description?: string;
+  externalLink?: string;
   media?: string[];
   state?: string;
   city?: string;
@@ -1999,6 +2000,7 @@ export async function updateSponsorAd(
     
     if (input.title !== undefined) updateData.title = input.title;
     if (input.description !== undefined) updateData.description = input.description;
+    if (input.externalLink !== undefined) updateData.externalLink = input.externalLink;
     if (input.media !== undefined) updateData.media = input.media;
     if (input.state !== undefined) updateData.state = input.state;
     if (input.city !== undefined) updateData.city = input.city;
