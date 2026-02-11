@@ -55,6 +55,7 @@ import {
   RefreshCw,
   Plus,
   Megaphone,
+  Palette,
 } from "lucide-react";
 
 export default function CategoriesPage() {
@@ -70,6 +71,9 @@ export default function CategoriesPage() {
     category: Category | null;
   }>({ open: false, category: null });
   const [editName, setEditName] = useState("");
+  const [editIcon, setEditIcon] = useState("");
+  const [editColorStart, setEditColorStart] = useState("#6366f1");
+  const [editColorEnd, setEditColorEnd] = useState("#8b5cf6");
   
   // Delete dialog state
   const [deleteDialog, setDeleteDialog] = useState<{
@@ -83,6 +87,7 @@ export default function CategoriesPage() {
   const [createName, setCreateName] = useState("");
   const [createParentId, setCreateParentId] = useState("");  // Store parent category value
   const [createOrder, setCreateOrder] = useState(1);
+  const [createIcon, setCreateIcon] = useState("color-palette");
   const [creating, setCreating] = useState(false);
 
   // Error state for name validation
@@ -151,6 +156,9 @@ export default function CategoriesPage() {
 
   const openEditDialog = (category: Category) => {
     setEditName(category.name);
+    setEditIcon(category.icon || "");
+    setEditColorStart(category.colorStart || "#6366f1");
+    setEditColorEnd(category.colorEnd || "#8b5cf6");
     setEditNameError("");
     setEditDialog({ open: true, category });
   };
@@ -175,13 +183,22 @@ export default function CategoriesPage() {
     setEditNameError("");
     setActionLoading(editDialog.category.$id);
     try {
-      await updateCategory(editDialog.category.$id, { name: editName.trim() });
+      const updateData: Partial<Category> = { name: editName.trim() };
+      
+      // Only include icon and colors for main categories
+      if (editDialog.category.type === "category") {
+        updateData.icon = editIcon.trim();
+        updateData.colorStart = editColorStart;
+        updateData.colorEnd = editColorEnd;
+      }
+      
+      await updateCategory(editDialog.category.$id, updateData);
       
       // Update local state
       setCategories((prev) =>
         prev.map((cat) =>
           cat.$id === editDialog.category?.$id
-            ? { ...cat, name: editName.trim() }
+            ? { ...cat, ...updateData }
             : cat
         )
       );
@@ -237,6 +254,7 @@ export default function CategoriesPage() {
     setCreateName("");
     setCreateParentId(parentValue || "");  // Store parent category value
     setCreateOrder(type === "category" ? mainCategories.length + 1 : 1);
+    setCreateIcon(availableIcons[0] || "color-palette");
     setCreateNameError("");
     setCreateDialog(true);
   };
@@ -279,7 +297,7 @@ export default function CategoriesPage() {
         parentId: createType === "subcategory" ? createParentId : undefined,
         value,
         name: createName.trim(),
-        icon: createType === "category" ? "color-palette" : "-",
+        icon: createType === "category" ? createIcon : "-",
         order: createOrder,
       });
 
@@ -301,6 +319,15 @@ export default function CategoriesPage() {
       setCreating(false);
     }
   };
+
+  // Extract unique icon names from existing categories (for dropdown)
+  const availableIcons = Array.from(
+    new Set(
+      categories
+        .filter((c) => c.type === "category" && c.icon && c.icon !== "-")
+        .map((c) => c.icon)
+    )
+  ).sort();
 
   // Filter and organize categories
   const mainCategories = categories.filter((c) => c.type === "category");
@@ -478,15 +505,31 @@ export default function CategoriesPage() {
                               )}
                             </Button>
                             <div
-                              className="h-8 w-8 rounded flex items-center justify-center bg-primary/20"
+                              className={`h-8 w-8 rounded flex items-center justify-center shrink-0 ${
+                                !(category.colorStart && category.colorEnd) ? "bg-primary/20" : ""
+                              }`}
+                              style={
+                                category.colorStart && category.colorEnd
+                                  ? {
+                                      background: `linear-gradient(135deg, ${category.colorStart}, ${category.colorEnd})`,
+                                    }
+                                  : undefined
+                              }
                             >
-                              <Folder className="h-4 w-4 text-primary" />
+                              <Folder className={`h-4 w-4 ${category.colorStart && category.colorEnd ? "text-white drop-shadow-sm" : "text-primary"}`} />
                             </div>
                             <div>
                               <p className="font-medium">{category.name}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {subcategories.length} subcategories
-                              </p>
+                              <div className="flex items-center gap-2">
+                                <p className="text-xs text-muted-foreground">
+                                  {subcategories.length} subcategories
+                                </p>
+                                {category.icon && category.icon !== "-" && (
+                                  <span className="text-xs text-muted-foreground/60 font-mono">
+                                    {category.icon}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </TableCell>
@@ -613,6 +656,99 @@ export default function CategoriesPage() {
                 <p className="text-xs text-destructive">{editNameError}</p>
               )}
             </div>
+
+            {/* Icon & Color fields (only for main categories) */}
+            {editDialog.category?.type === "category" && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="editIcon">Icon (Ionicons name)</Label>
+                  <select
+                    id="editIcon"
+                    value={availableIcons.includes(editIcon) ? editIcon : "__custom__"}
+                    onChange={(e) => {
+                      if (e.target.value !== "__custom__") {
+                        setEditIcon(e.target.value);
+                      } else {
+                        setEditIcon("");
+                      }
+                    }}
+                    className="w-full h-10 pl-3 pr-10 rounded-md border border-border/50 bg-input/50 text-sm"
+                  >
+                    {availableIcons.map((icon) => (
+                      <option key={icon} value={icon}>
+                        {icon}
+                      </option>
+                    ))}
+                    <option value="__custom__">✏️ Custom...</option>
+                  </select>
+                  {(!availableIcons.includes(editIcon)) && (
+                    <Input
+                      value={editIcon}
+                      onChange={(e) => setEditIcon(e.target.value)}
+                      placeholder="Enter custom icon name, e.g. rocket, heart"
+                      className="bg-input/50 border-border/50"
+                    />
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Ionicons icon name used in the mobile app
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Gradient Colors</Label>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 space-y-1">
+                      <Label htmlFor="editColorStart" className="text-xs text-muted-foreground">Start</Label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          id="editColorStart"
+                          value={editColorStart}
+                          onChange={(e) => setEditColorStart(e.target.value)}
+                          className="h-9 w-12 rounded border border-border/50 cursor-pointer bg-transparent p-0.5"
+                        />
+                        <Input
+                          value={editColorStart}
+                          onChange={(e) => setEditColorStart(e.target.value)}
+                          placeholder="#6366f1"
+                          className="bg-input/50 border-border/50 font-mono text-sm"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex-1 space-y-1">
+                      <Label htmlFor="editColorEnd" className="text-xs text-muted-foreground">End</Label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          id="editColorEnd"
+                          value={editColorEnd}
+                          onChange={(e) => setEditColorEnd(e.target.value)}
+                          className="h-9 w-12 rounded border border-border/50 cursor-pointer bg-transparent p-0.5"
+                        />
+                        <Input
+                          value={editColorEnd}
+                          onChange={(e) => setEditColorEnd(e.target.value)}
+                          placeholder="#8b5cf6"
+                          className="bg-input/50 border-border/50 font-mono text-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  {/* Color preview */}
+                  <div className="flex items-center gap-2 mt-2">
+                    <div
+                      className="h-8 w-full rounded-md"
+                      style={{
+                        background: `linear-gradient(135deg, ${editColorStart}, ${editColorEnd})`,
+                      }}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Gradient colors for the category card in the mobile app
+                  </p>
+                </div>
+              </>
+            )}
           </div>
           <DialogFooter>
             <Button
@@ -779,6 +915,43 @@ export default function CategoriesPage() {
                 <p className="text-xs text-destructive">{createNameError}</p>
               )}
             </div>
+
+            {/* Icon (only for main categories) */}
+            {createType === "category" && (
+              <div className="space-y-2">
+                <Label htmlFor="createIcon">Icon (Ionicons name)</Label>
+                <select
+                  id="createIcon"
+                  value={availableIcons.includes(createIcon) ? createIcon : "__custom__"}
+                  onChange={(e) => {
+                    if (e.target.value !== "__custom__") {
+                      setCreateIcon(e.target.value);
+                    } else {
+                      setCreateIcon("");
+                    }
+                  }}
+                  className="w-full h-10 pl-3 pr-10 rounded-md border border-border/50 bg-input/50 text-sm"
+                >
+                  {availableIcons.map((icon) => (
+                    <option key={icon} value={icon}>
+                      {icon}
+                    </option>
+                  ))}
+                  <option value="__custom__">✏️ Custom...</option>
+                </select>
+                {(!availableIcons.includes(createIcon)) && (
+                  <Input
+                    value={createIcon}
+                    onChange={(e) => setCreateIcon(e.target.value)}
+                    placeholder="Enter custom icon name, e.g. rocket, heart"
+                    className="bg-input/50 border-border/50"
+                  />
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Ionicons icon name used in the mobile app
+                </p>
+              </div>
+            )}
 
             {/* Order */}
             <div className="space-y-2">
