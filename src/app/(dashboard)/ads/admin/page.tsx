@@ -103,7 +103,7 @@ export default function AdminAdsPage() {
   const router = useRouter();
   const { admin } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [adminAdsBySlot, setAdminAdsBySlot] = useState<Map<number, SponsorAd[]>>(new Map());
+  const [adminAdsBySlot, setAdminAdsBySlot] = useState<Map<number, SponsorAd>>(new Map());
   const [stats, setStats] = useState({ totalAds: 0, activeAds: 0, pendingAds: 0 });
 
   // Create Ad Dialog state
@@ -552,8 +552,7 @@ export default function AdminAdsPage() {
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-5">
               {AD_SLOTS.map((displaySlot) => {
                 const storedSlot = displaySlot - 1;
-                const adsInSlot = adminAdsBySlot.get(storedSlot) || [];
-                const hasAds = adsInSlot.length > 0;
+                const ad = adminAdsBySlot.get(storedSlot);
 
                 return (
                   <button
@@ -561,19 +560,16 @@ export default function AdminAdsPage() {
                     onClick={() => handleClickSlot(displaySlot)}
                     className="relative aspect-[3/4] transition-all transform hover:scale-105 hover:z-10 group"
                   >
-                    {hasAds ? (
+                    {ad ? (
                       <div className="relative w-full h-full">
-                        {adsInSlot.slice(0, 1).map((ad) => {
+                        {(() => {
                           const firstMedia = ad.media?.[0] || ad.image || "";
                           const mediaUrl = isVideoUrl(firstMedia) 
                             ? getVideoUrl(firstMedia) 
                             : getImageUrl(firstMedia, 300, 400);
                           
                           return (
-                            <div
-                              key={ad.$id}
-                              className="absolute inset-0 rounded-xl overflow-hidden border-2 border-white/20 shadow-lg transition-transform group-hover:shadow-xl"
-                            >
+                            <div className="absolute inset-0 rounded-xl overflow-hidden border-2 border-white/20 shadow-lg transition-transform group-hover:shadow-xl">
                               <img
                                 src={mediaUrl}
                                 alt=""
@@ -581,7 +577,7 @@ export default function AdminAdsPage() {
                               />
                             </div>
                           );
-                        })}
+                        })()}
                         
                         <div className="absolute top-2 left-2 z-10 px-2 py-1 rounded-md bg-black/70 text-white text-sm font-bold shadow">
                           {displaySlot}
@@ -615,63 +611,60 @@ export default function AdminAdsPage() {
           
           {selectedSlotForDetail && (() => {
             const storedSlot = selectedSlotForDetail - 1;
-            const adsInSlot = adminAdsBySlot.get(storedSlot) || [];
-            const canAddMore = adsInSlot.length === 0;
+            const ad = adminAdsBySlot.get(storedSlot);
 
             return (
               <div className="space-y-4">
-                {adsInSlot.length === 0 ? (
+                {!ad ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <p>No ads in this slot</p>
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    {adsInSlot.map((ad) => {
-                      const firstMedia = ad.media?.[0] || ad.image || "";
-                      const mediaUrl = isVideoUrl(firstMedia)
-                        ? getVideoUrl(firstMedia)
-                        : getImageUrl(firstMedia, 100, 100);
+                  (() => {
+                    const firstMedia = ad.media?.[0] || ad.image || "";
+                    const mediaUrl = isVideoUrl(firstMedia)
+                      ? getVideoUrl(firstMedia)
+                      : getImageUrl(firstMedia, 100, 100);
 
-                      return (
-                        <div key={ad.$id} className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30 border border-border/50">
-                          <div className="w-16 h-16 rounded-lg overflow-hidden bg-secondary flex-shrink-0">
-                            {isVideoUrl(firstMedia) ? (
-                              <div className="w-full h-full flex items-center justify-center bg-black/50">
-                                <Play className="h-6 w-6 text-white/70" />
-                              </div>
-                            ) : (
-                              <img src={mediaUrl} alt="" className="w-full h-full object-cover" />
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium truncate">{ad.title}</p>
-                            <p className="text-xs text-muted-foreground truncate">{ad.city}, {ad.state}</p>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => handleOpenEditDialog(ad)}
-                            >
-                              <Edit2 className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-destructive hover:text-destructive"
-                              onClick={() => handleOpenDeleteDialog(ad)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
+                    return (
+                      <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30 border border-border/50 overflow-hidden">
+                        <div className="w-16 h-16 rounded-lg overflow-hidden bg-secondary flex-shrink-0">
+                          {isVideoUrl(firstMedia) ? (
+                            <div className="w-full h-full flex items-center justify-center bg-black/50">
+                              <Play className="h-6 w-6 text-white/70" />
+                            </div>
+                          ) : (
+                            <img src={mediaUrl} alt="" className="w-full h-full object-cover" />
+                          )}
                         </div>
-                      );
-                    })}
-                  </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">{ad.title}</p>
+                          <p className="text-xs text-muted-foreground truncate">{ad.city}, {ad.state}</p>
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => handleOpenEditDialog(ad)}
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            onClick={() => handleOpenDeleteDialog(ad)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })()
                 )}
 
-                {canAddMore && (
+                {!ad && (
                   <Button
                     onClick={() => {
                       setShowSlotDetailDialog(false);

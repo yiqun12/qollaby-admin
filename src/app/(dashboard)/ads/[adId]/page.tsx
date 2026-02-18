@@ -147,7 +147,7 @@ export default function AdDetailPage() {
         <AlertTriangle className="h-16 w-16 text-muted-foreground mb-4" />
         <h2 className="text-xl font-semibold mb-2">Ad Not Found</h2>
         <p className="text-muted-foreground mb-6">Could not find the advertisement</p>
-        <Button onClick={() => router.push("/ads")} variant="outline">
+        <Button onClick={() => router.back()} variant="outline">
           <ArrowLeft className="h-4 w-4 mr-2" />
           Back to Ads
         </Button>
@@ -189,7 +189,7 @@ export default function AdDetailPage() {
           <Button
             variant="outline"
             size="icon"
-            onClick={() => router.push("/ads")}
+            onClick={() => router.back()}
             className="bg-secondary/50 border-border/50"
           >
             <ArrowLeft className="h-4 w-4" />
