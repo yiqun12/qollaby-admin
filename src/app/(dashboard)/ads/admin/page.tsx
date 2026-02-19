@@ -27,7 +27,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/AuthContext";
 import { getImageUrl, getVideoUrl, isVideoUrl, uploadFiles } from "@/lib/appwrite";
 import { Category, getCategories, getSubcategories } from "@/lib/category-actions";
-import { createLocation, getAllLocations, getLocationsByState, getStates, Location } from "@/lib/location-actions";
 import {
     AD_SLOTS,
     AdSlot,
@@ -63,7 +62,6 @@ interface CreateAdForm {
   description: string;
   externalLink: string;
   location: PlaceValue | null;
-  locationConfirmed: boolean;
   state: string;
   city: string;
   category: string;
@@ -78,7 +76,6 @@ const initialFormState: CreateAdForm = {
   description: "",
   externalLink: "",
   location: null,
-  locationConfirmed: false,
   state: "",
   city: "",
   category: "",
@@ -92,6 +89,7 @@ interface EditAdForm {
   title: string;
   description: string;
   externalLink: string;
+  location: PlaceValue | null;
   state: string;
   city: string;
   category: string;
@@ -110,12 +108,7 @@ export default function AdminAdsPage() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [createForm, setCreateForm] = useState<CreateAdForm>(initialFormState);
   const [creating, setCreating] = useState(false);
-  const [states, setStates] = useState<string[]>([]);
-  const [cities, setCities] = useState<Location[]>([]);
-  const [allLocations, setAllLocations] = useState<Location[]>([]);
   const [slotUsageCounts, setSlotUsageCounts] = useState<SlotUsageInfo>({});
-  const [loadingCities, setLoadingCities] = useState(false);
-  const [confirmingLocation, setConfirmingLocation] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Edit Ad Dialog state
@@ -125,6 +118,7 @@ export default function AdminAdsPage() {
     title: "",
     description: "",
     externalLink: "",
+    location: null,
     state: "",
     city: "",
     category: "",
@@ -132,9 +126,6 @@ export default function AdminAdsPage() {
     slot: null,
   });
   const [updating, setUpdating] = useState(false);
-  const [editStates, setEditStates] = useState<string[]>([]);
-  const [editCities, setEditCities] = useState<Location[]>([]);
-  const [loadingEditCities, setLoadingEditCities] = useState(false);
   const [editSlotUsageCounts, setEditSlotUsageCounts] = useState<SlotUsageInfo>({});
 
   // Delete Ad state
@@ -199,32 +190,33 @@ export default function AdminAdsPage() {
     fetchAds();
   }, [fetchAds]);
 
-  // Load states, all locations, slot usage counts and categories when dialog opens
+  // Load slot usage counts and categories when create dialog opens
   useEffect(() => {
     if (showCreateDialog) {
-      getStates().then(setStates);
-      getAllLocations().then(setAllLocations);
       getSlotUsageCounts().then(setSlotUsageCounts);
       getCategories().then(setDynamicCategories);
     }
   }, [showCreateDialog]);
 
-  // Load cities when state changes
-  useEffect(() => {
-    if (createForm.state) {
-      setLoadingCities(true);
-      getLocationsByState(createForm.state)
-        .then(setCities)
-        .finally(() => setLoadingCities(false));
-      
-      if (!createForm.locationConfirmed) {
-        setCreateForm((prev) => ({ ...prev, city: "" }));
-      }
+  // Handle create form location change
+  const handleCreateLocationChange = (location: PlaceValue | null) => {
+    if (location?.state) {
+      const stateFullName = getStateFullName(location.state);
+      setCreateForm((prev) => ({
+        ...prev,
+        location,
+        state: stateFullName,
+        city: location.city || "",
+      }));
     } else {
-      setCities([]);
-      setCreateForm((prev) => ({ ...prev, city: "" }));
+      setCreateForm((prev) => ({
+        ...prev,
+        location,
+        state: "",
+        city: "",
+      }));
     }
-  }, [createForm.state, createForm.locationConfirmed]);
+  };
 
   // Fetch subcategories when create form category changes
   useEffect(() => {
@@ -234,64 +226,6 @@ export default function AdminAdsPage() {
       setCreateSubcategories([]);
     }
   }, [createForm.category]);
-
-  // Handle confirming location
-  const handleConfirmLocation = async () => {
-    if (!createForm.location) return;
-
-    const { state: stateCode, city } = createForm.location;
-    if (!stateCode || !city) {
-      alert("Could not extract state and city from the selected location.");
-      return;
-    }
-
-    const state = getStateFullName(stateCode);
-    setConfirmingLocation(true);
-    try {
-      const stateExists = states.includes(state);
-      const cityExists = allLocations.some(
-        (loc) => loc.state === state && loc.city === city
-      );
-
-      if (!stateExists || !cityExists) {
-        const stateLocations = allLocations.filter((loc) => loc.state === state);
-        const maxOrder = stateLocations.length > 0 
-          ? Math.max(...stateLocations.map((loc) => loc.order || 0)) + 1 
-          : 1;
-
-        await createLocation({
-          locationId: `${state}-${city}`.toLowerCase().replace(/\s+/g, "-"),
-          state,
-          city,
-          order: maxOrder,
-        });
-
-        const [newStates, newAllLocations] = await Promise.all([
-          getStates(),
-          getAllLocations(),
-        ]);
-        setStates(newStates);
-        setAllLocations(newAllLocations);
-
-        if (state) {
-          const newCities = await getLocationsByState(state);
-          setCities(newCities);
-        }
-      }
-
-      setCreateForm((prev) => ({
-        ...prev,
-        state,
-        city,
-        locationConfirmed: true,
-      }));
-    } catch (error) {
-      console.error("Failed to confirm location:", error);
-      alert("Failed to confirm location. Please try again.");
-    } finally {
-      setConfirmingLocation(false);
-    }
-  };
 
   const handleCreateAd = async () => {
     if (!admin?.profile?.userId) return;
@@ -341,13 +275,7 @@ export default function AdminAdsPage() {
 
   // Click add button in slot detail dialog to create ad
   const handleClickEmptySlot = async (displaySlot: AdSlot) => {
-    const [statesData, locationsData, usage] = await Promise.all([
-      getStates(),
-      getAllLocations(),
-      getSlotUsageCounts(),
-    ]);
-    setStates(statesData);
-    setAllLocations(locationsData);
+    const usage = await getSlotUsageCounts();
     setSlotUsageCounts(usage);
     
     setCreateForm({
@@ -361,12 +289,10 @@ export default function AdminAdsPage() {
   const handleOpenEditDialog = async (ad: SponsorAd) => {
     if (!ad.isAdminCreated) return;
 
-    const [statesData, usage, cats] = await Promise.all([
-      getStates(),
+    const [usage, cats] = await Promise.all([
       getSlotUsageCounts(),
       getCategories(),
     ]);
-    setEditStates(statesData);
     setDynamicCategories(cats);
 
     const displaySlot = ad.slot !== undefined ? ad.slot + 1 : null;
@@ -375,18 +301,19 @@ export default function AdminAdsPage() {
     }
     setEditSlotUsageCounts(usage);
 
-    if (ad.state) {
-      setLoadingEditCities(true);
-      const citiesData = await getLocationsByState(ad.state);
-      setEditCities(citiesData);
-      setLoadingEditCities(false);
-    }
-
     setEditingAd(ad);
     setEditForm({
       title: ad.title,
       description: ad.description || "",
       externalLink: ad.externalLink || "",
+      location: ad.state && ad.city ? {
+        placeId: "",
+        address: `${ad.city}, ${ad.state}`,
+        latitude: 0,
+        longitude: 0,
+        city: ad.city,
+        state: ad.state,
+      } : null,
       state: ad.state,
       city: ad.city,
       category: ad.category,
@@ -396,15 +323,25 @@ export default function AdminAdsPage() {
     setShowEditDialog(true);
   };
 
-  // Load edit cities when edit state changes
-  useEffect(() => {
-    if (editForm.state && showEditDialog) {
-      setLoadingEditCities(true);
-      getLocationsByState(editForm.state)
-        .then(setEditCities)
-        .finally(() => setLoadingEditCities(false));
+  // Handle edit form location change
+  const handleEditLocationChange = (location: PlaceValue | null) => {
+    if (location?.state) {
+      const stateFullName = getStateFullName(location.state);
+      setEditForm((prev) => ({
+        ...prev,
+        location,
+        state: stateFullName,
+        city: location.city || "",
+      }));
+    } else {
+      setEditForm((prev) => ({
+        ...prev,
+        location,
+        state: "",
+        city: "",
+      }));
     }
-  }, [editForm.state, showEditDialog]);
+  };
 
   // Fetch subcategories when edit form category changes
   useEffect(() => {
@@ -806,86 +743,23 @@ export default function AdminAdsPage() {
               />
             </div>
 
-            {/* Location Search */}
-            <div className="space-y-3">
+            {/* Location */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">
+                Location <span className="text-red-500">*</span>
+              </Label>
               <LocationPicker
                 value={createForm.location}
-                onChange={(location) => {
-                  setCreateForm((prev) => ({
-                    ...prev,
-                    location,
-                    locationConfirmed: false,
-                  }));
-                }}
-                label="Location Search"
-                placeholder="Search for full address..."
+                onChange={handleCreateLocationChange}
+                placeholder="Search city or address..."
                 showCurrentLocation={true}
+                countryRestriction="us"
               />
-
-              {createForm.location && !createForm.locationConfirmed && (
-                <Button
-                  type="button"
-                  onClick={handleConfirmLocation}
-                  disabled={confirmingLocation}
-                  className="w-full bg-primary hover:bg-primary/90"
-                >
-                  {confirmingLocation ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Confirming...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle className="h-4 w-4 mr-2" />
-                      Confirm Location
-                    </>
-                  )}
-                </Button>
+              {createForm.state && createForm.city && (
+                <p className="text-xs text-muted-foreground">
+                  {createForm.city}, {createForm.state}
+                </p>
               )}
-
-              {createForm.locationConfirmed && (
-                <div className="flex items-center gap-2 text-sm text-green-500 bg-green-500/10 px-3 py-2 rounded-md">
-                  <CheckCircle className="h-4 w-4" />
-                  <span>Location confirmed: {createForm.city}, {createForm.state}</span>
-                </div>
-              )}
-            </div>
-
-            {/* State & City */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="state" className="text-sm font-medium">
-                  State <span className="text-red-500">*</span>
-                </Label>
-                <select
-                  id="state"
-                  value={createForm.state}
-                  onChange={(e) => setCreateForm((prev) => ({ ...prev, state: e.target.value, locationConfirmed: false }))}
-                  className="w-full h-9 px-3 rounded-md bg-input/50 border border-border/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                >
-                  <option value="">Select state</option>
-                  {states.map((state) => (
-                    <option key={state} value={state}>{state}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="city" className="text-sm font-medium">
-                  City <span className="text-red-500">*</span>
-                </Label>
-                <select
-                  id="city"
-                  value={createForm.city}
-                  onChange={(e) => setCreateForm((prev) => ({ ...prev, city: e.target.value, locationConfirmed: false }))}
-                  disabled={!createForm.state || loadingCities}
-                  className="w-full h-9 px-3 rounded-md bg-input/50 border border-border/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
-                >
-                  <option value="">{loadingCities ? "Loading..." : "Select city"}</option>
-                  {cities.map((loc) => (
-                    <option key={loc.$id} value={loc.city}>{loc.city}</option>
-                  ))}
-                </select>
-              </div>
             </div>
 
             {/* Category & Subcategory */}
@@ -981,7 +855,21 @@ export default function AdminAdsPage() {
 
       {/* Edit Ad Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="sm:max-w-[500px] bg-card border-border">
+        <DialogContent
+          className="sm:max-w-[500px] bg-card border-border"
+          onPointerDownOutside={(e) => {
+            const target = e.target as HTMLElement;
+            if (target.closest('.pac-container')) {
+              e.preventDefault();
+            }
+          }}
+          onInteractOutside={(e) => {
+            const target = e.target as HTMLElement;
+            if (target.closest('.pac-container')) {
+              e.preventDefault();
+            }
+          }}
+        >
           <DialogHeader>
             <DialogTitle className="text-xl">Edit Ad</DialogTitle>
             <DialogDescription>
@@ -1025,37 +913,21 @@ export default function AdminAdsPage() {
               />
             </div>
 
-            {/* State & City */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-state">State</Label>
-                <select
-                  id="edit-state"
-                  value={editForm.state}
-                  onChange={(e) => setEditForm((prev) => ({ ...prev, state: e.target.value, city: "" }))}
-                  className="w-full h-9 px-3 rounded-md bg-input/50 border border-border/50 text-sm"
-                >
-                  <option value="">Select state</option>
-                  {editStates.map((state) => (
-                    <option key={state} value={state}>{state}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-city">City</Label>
-                <select
-                  id="edit-city"
-                  value={editForm.city}
-                  onChange={(e) => setEditForm((prev) => ({ ...prev, city: e.target.value }))}
-                  disabled={!editForm.state || loadingEditCities}
-                  className="w-full h-9 px-3 rounded-md bg-input/50 border border-border/50 text-sm disabled:opacity-50"
-                >
-                  <option value="">{loadingEditCities ? "Loading..." : "Select city"}</option>
-                  {editCities.map((loc) => (
-                    <option key={loc.$id} value={loc.city}>{loc.city}</option>
-                  ))}
-                </select>
-              </div>
+            {/* Location */}
+            <div className="space-y-2">
+              <Label>Location</Label>
+              <LocationPicker
+                value={editForm.location}
+                onChange={handleEditLocationChange}
+                placeholder="Search city or address..."
+                showCurrentLocation={false}
+                countryRestriction="us"
+              />
+              {editForm.state && editForm.city && (
+                <p className="text-xs text-muted-foreground">
+                  {editForm.city}, {editForm.state}
+                </p>
+              )}
             </div>
 
             {/* Category & Subcategory */}

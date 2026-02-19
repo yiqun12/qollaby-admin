@@ -11,7 +11,8 @@ import {
 } from "@/lib/user-actions";
 import { getImageUrl, getVideoUrl, isVideoUrl } from "@/lib/appwrite";
 import { getCategories, getSubcategories, Category } from "@/lib/category-actions";
-import { getStates, getLocationsByState, Location } from "@/lib/location-actions";
+import { getStateFullName } from "@/lib/utils";
+import LocationPicker, { PlaceValue } from "@/components/ui/location-picker";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -51,11 +52,9 @@ export default function UserAdsPage() {
   // Filter state
   const [stateFilter, setStateFilter] = useState("");
   const [cityFilter, setCityFilter] = useState("");
+  const [selectedLocation, setSelectedLocation] = useState<PlaceValue | null>(null);
   const [categoryFilter, setCategoryFilter] = useState("");
   const [subcategoryFilter, setSubcategoryFilter] = useState("");
-  const [filterStates, setFilterStates] = useState<string[]>([]);
-  const [filterCities, setFilterCities] = useState<Location[]>([]);
-  const [loadingFilterCities, setLoadingFilterCities] = useState(false);
 
   // Dynamic categories
   const [dynamicCategories, setDynamicCategories] = useState<Category[]>([]);
@@ -107,25 +106,23 @@ export default function UserAdsPage() {
     setPage(1);
   }, [search, statusFilter, stateFilter, cityFilter, categoryFilter, subcategoryFilter]);
 
-  // Load filter states and categories on mount
+  // Load categories on mount
   useEffect(() => {
-    getStates().then(setFilterStates);
     getCategories().then(setDynamicCategories);
   }, []);
 
-  // Load filter cities when state filter changes
-  useEffect(() => {
-    if (stateFilter) {
-      setLoadingFilterCities(true);
-      getLocationsByState(stateFilter)
-        .then(setFilterCities)
-        .finally(() => setLoadingFilterCities(false));
-      setCityFilter("");
+  // Handle location change
+  const handleLocationChange = (location: PlaceValue | null) => {
+    setSelectedLocation(location);
+    if (location?.state) {
+      const stateFullName = getStateFullName(location.state);
+      setStateFilter(stateFullName);
+      setCityFilter(location.city || "");
     } else {
-      setFilterCities([]);
+      setStateFilter("");
       setCityFilter("");
     }
-  }, [stateFilter]);
+  };
 
   // Reset subcategory filter and fetch subcategories when category filter changes
   useEffect(() => {
@@ -142,6 +139,7 @@ export default function UserAdsPage() {
 
   // Clear all filters
   const clearFilters = () => {
+    setSelectedLocation(null);
     setStateFilter("");
     setCityFilter("");
     setCategoryFilter("");
@@ -275,49 +273,44 @@ export default function UserAdsPage() {
           </div>
 
           {/* Filters - always visible */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6 p-4 rounded-lg bg-secondary/20 border border-border/30">
-              <select
-                value={stateFilter}
-                onChange={(e) => setStateFilter(e.target.value)}
-                className="h-9 px-3 rounded-md border border-border/50 bg-input/50 text-sm"
-              >
-                <option value="">All States</option>
-                {filterStates.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-              <select
-                value={cityFilter}
-                onChange={(e) => setCityFilter(e.target.value)}
-                disabled={!stateFilter || loadingFilterCities}
-                className="h-9 px-3 rounded-md border border-border/50 bg-input/50 text-sm disabled:opacity-50"
-              >
-                <option value="">{loadingFilterCities ? 'Loading...' : 'All Cities'}</option>
-                {filterCities.map((c) => (
-                  <option key={c.$id} value={c.city}>{c.city}</option>
-                ))}
-              </select>
-              <select
-                value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value)}
-                className="h-9 px-3 rounded-md border border-border/50 bg-input/50 text-sm"
-              >
-                <option value="">All Categories</option>
-                {dynamicCategories.map((cat) => (
-                  <option key={cat.value} value={cat.value}>{cat.name}</option>
-                ))}
-              </select>
-              <select
-                value={subcategoryFilter}
-                onChange={(e) => setSubcategoryFilter(e.target.value)}
-                disabled={!categoryFilter}
-                className="h-9 px-3 rounded-md border border-border/50 bg-input/50 text-sm disabled:opacity-50"
-              >
-                <option value="">All Subcategories</option>
-                {filterSubcategoriesList.map((sub) => (
-                  <option key={sub.value} value={sub.value}>{sub.name}</option>
-                ))}
-              </select>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 p-4 rounded-lg bg-secondary/20 border border-border/30">
+              <div className="space-y-1.5 sm:col-span-2">
+                <label className="text-xs font-medium text-muted-foreground">Location</label>
+                <LocationPicker
+                  value={selectedLocation}
+                  onChange={handleLocationChange}
+                  placeholder="Search city or address..."
+                  countryRestriction="us"
+                  showCurrentLocation={false}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Category</label>
+                <select
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(e.target.value)}
+                  className="w-full h-9 px-3 rounded-md border border-border/50 bg-input/50 text-sm"
+                >
+                  <option value="">All Categories</option>
+                  {dynamicCategories.map((cat) => (
+                    <option key={cat.value} value={cat.value}>{cat.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Subcategory</label>
+                <select
+                  value={subcategoryFilter}
+                  onChange={(e) => setSubcategoryFilter(e.target.value)}
+                  disabled={!categoryFilter}
+                  className="w-full h-9 px-3 rounded-md border border-border/50 bg-input/50 text-sm disabled:opacity-50"
+                >
+                  <option value="">All Subcategories</option>
+                  {filterSubcategoriesList.map((sub) => (
+                    <option key={sub.value} value={sub.value}>{sub.name}</option>
+                  ))}
+                </select>
+              </div>
               {activeFilterCount > 0 && (
                 <Button
                   variant="ghost"
