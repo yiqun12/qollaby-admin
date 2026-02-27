@@ -145,9 +145,6 @@ export default function AdminAdsPage() {
   const [deletingAd, setDeletingAd] = useState<SponsorAd | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Slot detail dialog state
-  const [showSlotDetailDialog, setShowSlotDetailDialog] = useState(false);
-  const [selectedSlotForDetail, setSelectedSlotForDetail] = useState<AdSlot | null>(null);
 
   // Dynamic categories
   const [dynamicCategories, setDynamicCategories] = useState<Category[]>([]);
@@ -281,13 +278,7 @@ export default function AdminAdsPage() {
     }
   };
 
-  // Click on slot to open detail dialog
-  const handleClickSlot = (displaySlot: AdSlot) => {
-    setSelectedSlotForDetail(displaySlot);
-    setShowSlotDetailDialog(true);
-  };
-
-  // Click add button in slot detail dialog to create ad
+  // Click empty slot to create ad
   const handleClickEmptySlot = async (displaySlot: AdSlot) => {
     const usage = await getSlotUsageCounts();
     setSlotUsageCounts(usage);
@@ -414,7 +405,6 @@ export default function AdminAdsPage() {
       await deleteSponsorAd(deletingAd.$id);
       setShowDeleteDialog(false);
       setDeletingAd(null);
-      setShowSlotDetailDialog(false);
       fetchAds();
     } catch (error) {
       console.error("Failed to delete ad:", error);
@@ -493,175 +483,98 @@ export default function AdminAdsPage() {
             Ad Slots
           </CardTitle>
           <p className="text-sm text-emerald-300/70">
-            Click on a slot to view/manage ads.
-            <span className="text-amber-400 ml-2">●</span> Multi-use (×3)
-            <span className="text-emerald-400 ml-2">●</span> Single-use (×1)
+            Click a slot to edit. Click empty slot to add ad.
           </p>
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-5">
-              {AD_SLOTS.map((slot) => (
-                <Skeleton key={slot} className="aspect-[3/4] rounded-lg" />
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              {[...Array(36)].map((_, i) => (
+                <Skeleton key={i} className="aspect-[3/4] rounded-xl" />
               ))}
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-5">
-              {AD_SLOTS.map((displaySlot) => {
-                const storedSlot = displaySlot - 1;
-                const adsInSlot = adminAdsBySlot.get(storedSlot) || [];
-                const maxUsage = getSlotMaxUsage(displaySlot);
-                const isMultiUse = (MULTI_USE_SLOTS as readonly number[]).includes(displaySlot);
-                const hasAds = adsInSlot.length > 0;
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              {(() => {
+                const cells: { key: string; displaySlot: AdSlot; subIndex: number; ad: SponsorAd | null; canAdd: boolean }[] = [];
+                for (const displaySlot of AD_SLOTS) {
+                  const storedSlot = displaySlot - 1;
+                  const ads = (adminAdsBySlot.get(storedSlot) || [])
+                    .slice()
+                    .sort((a, b) => new Date(a.$createdAt).getTime() - new Date(b.$createdAt).getTime());
+                  const maxUsage = getSlotMaxUsage(displaySlot);
+                  const isMultiUse = (MULTI_USE_SLOTS as readonly number[]).includes(displaySlot);
 
-                return (
-                  <button
-                    key={displaySlot}
-                    onClick={() => handleClickSlot(displaySlot)}
-                    className="relative aspect-[3/4] transition-all transform hover:scale-105 hover:z-10 group"
-                  >
-                    {hasAds ? (
-                      <div className="relative w-full h-full">
-                        {(() => {
-                          const firstAd = adsInSlot[0];
-                          const firstMedia = firstAd.media?.[0] || firstAd.image || "";
-                          const mediaUrl = isVideoUrl(firstMedia) 
-                            ? getVideoUrl(firstMedia) 
-                            : getImageUrl(firstMedia, 300, 400);
-                          
-                          return (
-                            <div className="absolute inset-0 rounded-xl overflow-hidden border-2 border-white/20 shadow-lg transition-transform group-hover:shadow-xl">
+                  if (isMultiUse) {
+                    for (let i = 0; i < 3; i++) {
+                      cells.push({
+                        key: `${displaySlot}-${i}`,
+                        displaySlot,
+                        subIndex: i,
+                        ad: ads[i] || null,
+                        canAdd: ads.length < maxUsage,
+                      });
+                    }
+                  } else {
+                    cells.push({
+                      key: `${displaySlot}`,
+                      displaySlot,
+                      subIndex: 0,
+                      ad: ads[0] || null,
+                      canAdd: ads.length < maxUsage,
+                    });
+                  }
+                }
+                return cells.map(({ key, displaySlot, subIndex, ad, canAdd }) => {
+                  const label = (MULTI_USE_SLOTS as readonly number[]).includes(displaySlot)
+                    ? `${displaySlot}-${subIndex + 1}`
+                    : `${displaySlot}`;
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => ad ? handleOpenEditDialog(ad) : canAdd && handleClickEmptySlot(displaySlot)}
+                      disabled={!ad && !canAdd}
+                      className="relative aspect-[3/4] transition-all transform hover:scale-[1.02] hover:z-10 rounded-xl overflow-hidden group disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
+                    >
+                      {ad ? (
+                        <>
+                          {(() => {
+                            const firstMedia = ad.media?.[0] || ad.image || "";
+                            const mediaUrl = isVideoUrl(firstMedia)
+                              ? getVideoUrl(firstMedia)
+                              : getImageUrl(firstMedia, 300, 400);
+                            return (
                               <img
                                 src={mediaUrl}
                                 alt=""
                                 className="w-full h-full object-cover"
                               />
-                            </div>
-                          );
-                        })()}
-                        
-                        <div className="absolute top-2 left-2 z-10 px-2 py-1 rounded-md bg-black/70 text-white text-sm font-bold shadow">
-                          {displaySlot}
+                            );
+                          })()}
+                          <div className="absolute top-2 left-2 z-10 px-2 py-1 rounded-md bg-black/70 text-white text-sm font-bold shadow">
+                            {label}
+                          </div>
+                        </>
+                      ) : (
+                        <div
+                          className={`w-full h-full rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1 transition-colors ${
+                            canAdd
+                              ? "border-amber-500/40 bg-amber-500/10 text-amber-400 hover:border-amber-400 hover:bg-amber-500/20"
+                              : "border-slate-500/30 bg-slate-500/5 text-slate-500"
+                          }`}
+                        >
+                          <span className="text-2xl sm:text-3xl font-bold">{label}</span>
+                          <span className="text-[10px] opacity-70">{canAdd ? "Empty" : "Full"}</span>
                         </div>
-                        
-                        <div className="absolute bottom-1 right-1 z-10 px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-bold shadow">
-                          {adsInSlot.length}/{maxUsage}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className={`
-                        w-full h-full rounded-xl border-2 border-dashed
-                        flex flex-col items-center justify-center gap-1
-                        transition-colors
-                        ${isMultiUse
-                          ? "border-amber-500/40 bg-amber-500/10 text-amber-400 hover:border-amber-400 hover:bg-amber-500/20"
-                          : "border-slate-500/40 bg-slate-500/10 text-slate-400 hover:border-slate-400 hover:bg-slate-500/20"
-                        }
-                      `}>
-                        <span className="text-3xl sm:text-4xl font-bold">{displaySlot}</span>
-                        <span className="text-[10px] opacity-70">×{maxUsage}</span>
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
+                      )}
+                    </button>
+                  );
+                });
+              })()}
             </div>
           )}
         </CardContent>
       </Card>
-
-      {/* Slot Detail Dialog */}
-      <Dialog open={showSlotDetailDialog} onOpenChange={setShowSlotDetailDialog}>
-        <DialogContent className="sm:max-w-[500px] max-h-[80vh] overflow-hidden flex flex-col bg-card border-border">
-          <DialogHeader className="flex-shrink-0">
-            <DialogTitle className="flex items-center gap-2">
-              <Shield className="h-5 w-5 text-emerald-400" />
-              Slot #{selectedSlotForDetail}
-            </DialogTitle>
-            <DialogDescription>
-              {selectedSlotForDetail && (MULTI_USE_SLOTS as readonly number[]).includes(selectedSlotForDetail)
-                ? `Multi-use slot (up to 3 ads)`
-                : `Single-use slot`
-              }
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="flex-1 overflow-y-auto min-h-0">
-          {selectedSlotForDetail && (() => {
-            const storedSlot = selectedSlotForDetail - 1;
-            const adsInSlot = adminAdsBySlot.get(storedSlot) || [];
-            const maxUsage = getSlotMaxUsage(selectedSlotForDetail);
-            const canAddMore = adsInSlot.length < maxUsage;
-
-            return (
-              <div className="space-y-4">
-                {adsInSlot.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <p>No ads in this slot</p>
-                  </div>
-                ) : (
-                  adsInSlot.map((ad) => {
-                    const firstMedia = ad.media?.[0] || ad.image || "";
-                    const mediaUrl = isVideoUrl(firstMedia)
-                      ? getVideoUrl(firstMedia)
-                      : getImageUrl(firstMedia, 100, 100);
-
-                    return (
-                      <div key={ad.$id} className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30 border border-border/50">
-                        <div className="w-16 h-16 rounded-lg overflow-hidden bg-secondary flex-shrink-0">
-                          {isVideoUrl(firstMedia) ? (
-                            <div className="w-full h-full flex items-center justify-center bg-black/50">
-                              <Play className="h-6 w-6 text-white/70" />
-                            </div>
-                          ) : (
-                            <img src={mediaUrl} alt="" className="w-full h-full object-cover" />
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0 overflow-hidden">
-                          <p className="font-medium truncate">{ad.title}</p>
-                          <p className="text-xs text-muted-foreground truncate">{ad.city}, {ad.state}</p>
-                        </div>
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => handleOpenEditDialog(ad)}
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive hover:text-destructive"
-                            onClick={() => handleOpenDeleteDialog(ad)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-
-                {canAddMore && (
-                  <Button
-                    onClick={() => {
-                      setShowSlotDetailDialog(false);
-                      handleClickEmptySlot(selectedSlotForDetail);
-                    }}
-                    className="w-full"
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Ad ({maxUsage - adsInSlot.length} remaining)
-                  </Button>
-                )}
-              </div>
-            );
-          })()}
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* Create Ad Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>

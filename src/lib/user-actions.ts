@@ -1585,29 +1585,41 @@ export interface SponsorAdListResult {
 }
 
 /**
- * Get all admin-created ads organized by slot (one ad per slot, keeps the latest)
+ * Get all admin-created ads organized by slot
+ * Uses pagination to fetch all ads (Appwrite default limit can truncate results)
  */
 export async function getAdminAdsBySlot(): Promise<Map<number, SponsorAd[]>> {
   try {
-    const queries: string[] = [
-      Query.equal("isAdminCreated", true),
-      Query.limit(500),
-    ];
-
-    const adsRes = await databases.listDocuments(
-      process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!,
-      Collections.SPONSOR_ADS,
-      queries
-    );
-
     const adsBySlot = new Map<number, SponsorAd[]>();
-    for (const doc of adsRes.documents) {
-      const ad = doc as unknown as SponsorAd;
-      const storedSlot = ad.slot;
-      if (storedSlot !== undefined && storedSlot !== null) {
-        const existing = adsBySlot.get(storedSlot) || [];
-        existing.push(ad);
-        adsBySlot.set(storedSlot, existing);
+    const pageSize = 100;
+    let offset = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      const adsRes = await databases.listDocuments(
+        process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!,
+        Collections.SPONSOR_ADS,
+        [
+          Query.equal("isAdminCreated", true),
+          Query.limit(pageSize),
+          Query.offset(offset),
+        ]
+      );
+
+      for (const doc of adsRes.documents) {
+        const ad = doc as unknown as SponsorAd;
+        const storedSlot = ad.slot;
+        if (storedSlot !== undefined && storedSlot !== null) {
+          const existing = adsBySlot.get(storedSlot) || [];
+          existing.push(ad);
+          adsBySlot.set(storedSlot, existing);
+        }
+      }
+
+      if (adsRes.documents.length < pageSize) {
+        hasMore = false;
+      } else {
+        offset += pageSize;
       }
     }
 
@@ -1626,8 +1638,14 @@ export async function getSponsorAds(params: SponsorAdListParams = {}): Promise<S
   const offset = (page - 1) * limit;
 
   try {
+    // User ads: sort by slot number; admin/other: sort by created time
+    const orderQuery =
+      isAdminCreated === false
+        ? Query.orderAsc("slot")
+        : Query.orderDesc("$createdAt");
+
     const queries: string[] = [
-      Query.orderDesc("$createdAt"),
+      orderQuery,
       Query.limit(limit),
       Query.offset(offset),
     ];
