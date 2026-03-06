@@ -628,14 +628,18 @@ export default function CategoriesPage() {
 
       {/* Edit dialog */}
       <Dialog open={editDialog.open} onOpenChange={(open) => setEditDialog({ open, category: null })}>
-        <DialogContent className="bg-card border-border/50 max-w-md">
-          <DialogHeader>
+        <DialogContent className="max-w-md max-h-[90dvh] flex flex-col p-0 gap-0 overflow-hidden top-[5vh] translate-y-0 left-[50%] -translate-x-1/2 bg-card border-border/50">
+          <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-2 border-b border-border/50">
             <DialogTitle>Edit Category</DialogTitle>
             <DialogDescription>
               Update the {editDialog.category?.type === "category" ? "category" : "subcategory"} details.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div
+            className="flex-1 min-h-0 overflow-y-scroll overflow-x-hidden overscroll-contain px-6 py-4 touch-pan-y"
+            style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}
+          >
+          <div className="space-y-4 pb-4">
             <div className="space-y-2">
               <Label htmlFor="name">Name</Label>
               <Input
@@ -746,7 +750,8 @@ export default function CategoriesPage() {
               </>
             )}
           </div>
-          <DialogFooter>
+          </div>
+          <DialogFooter className="flex-shrink-0 border-t border-border/50 px-6 py-4 bg-card">
             <Button
               variant="outline"
               onClick={() => setEditDialog({ open: false, category: null })}
@@ -862,8 +867,8 @@ export default function CategoriesPage() {
 
       {/* Create dialog */}
       <Dialog open={createDialog} onOpenChange={setCreateDialog}>
-        <DialogContent className="bg-card border-border/50 max-w-md">
-          <DialogHeader>
+        <DialogContent className="max-w-md max-h-[90dvh] flex flex-col p-0 gap-0 overflow-hidden top-[5vh] translate-y-0 left-[50%] -translate-x-1/2 bg-card border-border/50">
+          <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-2 border-b border-border/50">
             <DialogTitle>
               {createType === "category" ? "Add Category" : "Add Subcategory"}
             </DialogTitle>
@@ -873,7 +878,11 @@ export default function CategoriesPage() {
                 : "Create a new subcategory under an existing category"}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div
+            className="flex-1 min-h-0 overflow-y-scroll overflow-x-hidden overscroll-contain px-6 py-4 touch-pan-y"
+            style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}
+          >
+          <div className="space-y-4 pb-4">
             {/* Parent category selector (for subcategory) */}
             {createType === "subcategory" && (
               <div className="space-y-2">
@@ -962,7 +971,8 @@ export default function CategoriesPage() {
               />
             </div>
           </div>
-          <DialogFooter>
+          </div>
+          <DialogFooter className="flex-shrink-0 border-t border-border/50 px-6 py-4 bg-card">
             <Button
               variant="outline"
               onClick={() => setCreateDialog(false)}

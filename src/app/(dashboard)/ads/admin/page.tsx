@@ -27,6 +27,7 @@ import LocationPicker, { PlaceValue } from "@/components/ui/location-picker";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/AuthContext";
 import { getImageUrl, getVideoUrl, isVideoUrl, uploadFiles } from "@/lib/appwrite";
+import { MediaUpload } from "@/components/ui/media-upload";
 import { Category, getCategories, getSubcategories } from "@/lib/category-actions";
 import {
     AD_SLOTS,
@@ -56,11 +57,9 @@ import {
     RefreshCw,
     Shield,
     Trash2,
-    Upload,
-    XCircle,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 interface CreateAdForm {
   title: string;
@@ -120,7 +119,6 @@ export default function AdminAdsPage() {
   const [createForm, setCreateForm] = useState<CreateAdForm>(initialFormState);
   const [creating, setCreating] = useState(false);
   const [slotUsageCounts, setSlotUsageCounts] = useState<SlotUsageInfo>({});
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Edit Ad Dialog state
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -151,34 +149,6 @@ export default function AdminAdsPage() {
   const [dynamicCategories, setDynamicCategories] = useState<Category[]>([]);
   const [createSubcategories, setCreateSubcategories] = useState<Category[]>([]);
   const [editSubcategoriesList, setEditSubcategoriesList] = useState<Category[]>([]);
-
-  // Handle media file selection
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
-
-    const newPreviews = files.map((file) => URL.createObjectURL(file));
-    setCreateForm((prev) => ({
-      ...prev,
-      mediaFiles: [...prev.mediaFiles, ...files],
-      mediaPreviews: [...prev.mediaPreviews, ...newPreviews],
-    }));
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
-
-  const removeMediaFile = (index: number) => {
-    setCreateForm((prev) => {
-      URL.revokeObjectURL(prev.mediaPreviews[index]);
-      return {
-        ...prev,
-        mediaFiles: prev.mediaFiles.filter((_, i) => i !== index),
-        mediaPreviews: prev.mediaPreviews.filter((_, i) => i !== index),
-      };
-    });
-  };
 
   const fetchAds = useCallback(async () => {
     setLoading(true);
@@ -581,7 +551,7 @@ export default function AdminAdsPage() {
       {/* Create Ad Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
         <DialogContent 
-          className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto bg-card border-border"
+          className="sm:max-w-[600px] max-h-[90dvh] flex flex-col p-0 gap-0 overflow-hidden top-[5vh] translate-y-0 left-[50%] -translate-x-1/2 bg-card border-border"
           onPointerDownOutside={(e) => {
             const target = e.target as HTMLElement;
             if (target.closest('.pac-container')) {
@@ -595,69 +565,31 @@ export default function AdminAdsPage() {
             }
           }}
         >
-          <DialogHeader>
+          <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-2 border-b border-border/50">
             <DialogTitle className="text-xl">Create Ad</DialogTitle>
             <DialogDescription>
               Create a new sponsor advertisement with a specific ad slot.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-5 py-4">
+          <div 
+            className="flex-1 min-h-0 overflow-y-scroll overflow-x-hidden overscroll-contain px-6 py-4 pb-8 touch-pan-y"
+            style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}
+          >
+          <div className="space-y-5 pb-4">
             {/* Photo/Video Upload */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">
-                Photo/Video <span className="text-red-500">*</span>
-              </Label>
-              
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*,video/*"
-                multiple
-                onChange={handleFileSelect}
-                className="hidden"
-              />
-
-              {createForm.mediaPreviews.length > 0 && (
-                <div className="grid grid-cols-3 gap-2 mb-2">
-                  {createForm.mediaPreviews.map((preview, index) => {
-                    const file = createForm.mediaFiles[index];
-                    const isVideo = file?.type.startsWith("video/");
-                    return (
-                      <div key={index} className="relative aspect-square rounded-lg overflow-hidden bg-secondary/30">
-                        {isVideo ? (
-                          <video src={preview} className="w-full h-full object-cover" />
-                        ) : (
-                          <img src={preview} alt={`Preview ${index + 1}`} className="w-full h-full object-cover" />
-                        )}
-                        {isVideo && (
-                          <div className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/70 text-white text-xs">
-                            Video
-                          </div>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => removeMediaFile(index)}
-                          className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center hover:bg-red-600 transition-colors"
-                        >
-                          <XCircle className="w-4 h-4" />
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-border/50 rounded-lg p-6 text-center hover:border-primary/50 transition-colors cursor-pointer bg-secondary/20"
-              >
-                <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">
-                  {createForm.mediaPreviews.length > 0 ? "Add more photos or videos" : "Tap to upload photos or videos"}
-                </p>
-              </div>
-            </div>
+            <MediaUpload
+              value={{
+                files: createForm.mediaFiles,
+                previews: createForm.mediaPreviews,
+              }}
+              onChange={({ files, previews }) =>
+                setCreateForm((prev) => ({ ...prev, mediaFiles: files, mediaPreviews: previews }))
+              }
+              label="Photo/Video"
+              placeholder="Tap to upload photos or videos"
+              addMoreLabel="Add more photos or videos"
+            />
 
             {/* Ad Title */}
             <div className="space-y-2">
@@ -815,8 +747,9 @@ export default function AdminAdsPage() {
               )}
             </div>
           </div>
+          </div>
 
-          <DialogFooter>
+          <DialogFooter className="flex-shrink-0 border-t border-border/50 px-6 py-4 bg-card">
             <Button
               variant="outline"
               onClick={() => setShowCreateDialog(false)}
@@ -848,7 +781,7 @@ export default function AdminAdsPage() {
       {/* Edit Ad Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
         <DialogContent
-          className="sm:max-w-[500px] bg-card border-border"
+          className="sm:max-w-[500px] max-h-[90dvh] flex flex-col p-0 gap-0 overflow-hidden top-[5vh] translate-y-0 left-[50%] -translate-x-1/2 bg-card border-border"
           onPointerDownOutside={(e) => {
             const target = e.target as HTMLElement;
             if (target.closest('.pac-container')) {
@@ -862,14 +795,18 @@ export default function AdminAdsPage() {
             }
           }}
         >
-          <DialogHeader>
+          <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-2 border-b border-border/50">
             <DialogTitle className="text-xl">Edit Ad</DialogTitle>
             <DialogDescription>
               Update the ad details.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
+          <div
+            className="flex-1 min-h-0 overflow-y-scroll overflow-x-hidden overscroll-contain px-6 py-4 touch-pan-y"
+            style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}
+          >
+          <div className="space-y-4 pb-4">
             {/* Title */}
             <div className="space-y-2">
               <Label htmlFor="edit-title">Title</Label>
@@ -1015,8 +952,9 @@ export default function AdminAdsPage() {
               </div>
             </div>
           </div>
+          </div>
 
-          <DialogFooter>
+          <DialogFooter className="flex-shrink-0 border-t border-border/50 px-6 py-4 bg-card">
             <Button variant="outline" onClick={() => setShowEditDialog(false)} disabled={updating}>
               Cancel
             </Button>
