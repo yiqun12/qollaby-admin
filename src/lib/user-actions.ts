@@ -1,5 +1,6 @@
 import { Profile, UserContentStats, UserRole, UserSubscriptionInfo } from "@/types/profile.types";
 import { Collections, databases, Query } from "./appwrite";
+import { ID } from "appwrite";
 
 export interface UserListParams {
   page?: number;
@@ -435,20 +436,16 @@ export async function updateUserRole(profileId: string, role: UserRole): Promise
 }
 
 /**
- * Delete user profile
- * Note: This only deletes the profile document, not the Appwrite Auth user
- * Full user deletion requires Appwrite server-side SDK with admin privileges
+ * Delete user profile via server-side API route (requires APPWRITE_API_KEY)
  */
 export async function deleteUserProfile(profileId: string): Promise<void> {
-  try {
-    await databases.deleteDocument(
-      process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!,
-      Collections.PROFILE,
-      profileId
-    );
-  } catch (error) {
-    console.error("Error deleting user:", error);
-    throw error;
+  const res = await fetch(`/api/admin/users/${profileId}`, {
+    method: "DELETE",
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to delete user profile");
   }
 }
 
@@ -1030,6 +1027,48 @@ export async function getPostById(postId: string): Promise<Post | null> {
   } catch (error) {
     console.error("Error fetching post:", error);
     return null;
+  }
+}
+
+export async function getExchangeListingById(listingId: string): Promise<ExchangeListing | null> {
+  try {
+    const doc = await databases.getDocument(
+      process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!,
+      Collections.EXCHANGE_LISTINGS,
+      listingId
+    );
+    return { ...doc, type: "exchange" as const } as unknown as ExchangeListing;
+  } catch (error) {
+    console.error("Error fetching exchange listing:", error);
+    return null;
+  }
+}
+
+export async function deletePost(postId: string): Promise<boolean> {
+  try {
+    await databases.deleteDocument(
+      process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!,
+      Collections.POSTS,
+      postId
+    );
+    return true;
+  } catch (error) {
+    console.error("Error deleting post:", error);
+    return false;
+  }
+}
+
+export async function deleteExchangeListing(listingId: string): Promise<boolean> {
+  try {
+    await databases.deleteDocument(
+      process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!,
+      Collections.EXCHANGE_LISTINGS,
+      listingId
+    );
+    return true;
+  } catch (error) {
+    console.error("Error deleting exchange listing:", error);
+    return false;
   }
 }
 
@@ -2230,7 +2269,7 @@ export async function createSponsorAd(input: CreateSponsorAdInput): Promise<Spon
     const doc = await databases.createDocument(
       process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!,
       Collections.SPONSOR_ADS,
-      "unique()",
+      ID.unique(),
       {
         userId: input.userId,
         title: input.title,

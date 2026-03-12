@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   getSponsorAds,
   getSponsorAdStats,
@@ -43,22 +43,24 @@ interface AdWithStats extends SponsorAd {
 
 export default function UserAdsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [loading, setLoading] = useState(true);
   const [ads, setAds] = useState<AdWithStats[]>([]);
   const [stats, setStats] = useState({ totalAds: 0, activeAds: 0, pendingAds: 0 });
   const [metrics, setMetrics] = useState({ totalViews: 0, totalClicks: 0, ctr: 0 });
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(() => Number(searchParams.get("page")) || 1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | SponsorAdStatus>("all");
+  const [search, setSearch] = useState(() => searchParams.get("search") || "");
+  const [statusFilter, setStatusFilter] = useState<"all" | SponsorAdStatus>(() => (searchParams.get("status") as "all" | SponsorAdStatus) || "all");
 
   // Filter state
-  const [stateFilter, setStateFilter] = useState("");
-  const [cityFilter, setCityFilter] = useState("");
+  const [stateFilter, setStateFilter] = useState(() => searchParams.get("state") || "");
+  const [cityFilter, setCityFilter] = useState(() => searchParams.get("city") || "");
   const [selectedLocation, setSelectedLocation] = useState<PlaceValue | null>(null);
-  const [categoryFilter, setCategoryFilter] = useState("");
-  const [subcategoryFilter, setSubcategoryFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState(() => searchParams.get("category") || "");
+  const [subcategoryFilter, setSubcategoryFilter] = useState(() => searchParams.get("subcategory") || "");
 
   // Dynamic categories
   const [dynamicCategories, setDynamicCategories] = useState<Category[]>([]);
@@ -111,6 +113,20 @@ export default function UserAdsPage() {
   useEffect(() => {
     setPage(1);
   }, [search, statusFilter, stateFilter, cityFilter, categoryFilter, subcategoryFilter]);
+
+  // Sync filter state to URL params
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (search) params.set("search", search);
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    if (stateFilter) params.set("state", stateFilter);
+    if (cityFilter) params.set("city", cityFilter);
+    if (categoryFilter) params.set("category", categoryFilter);
+    if (subcategoryFilter) params.set("subcategory", subcategoryFilter);
+    if (page > 1) params.set("page", String(page));
+    const qs = params.toString();
+    router.replace(qs ? `?${qs}` : "/ads/user", { scroll: false });
+  }, [search, statusFilter, stateFilter, cityFilter, categoryFilter, subcategoryFilter, page, router]);
 
   // Load categories on mount
   useEffect(() => {
@@ -202,7 +218,7 @@ export default function UserAdsPage() {
       />
 
       {/* Stats Cards - Row 1 */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2">
         <Card className="bg-card/50 border-border/50">
           <CardContent className="pt-6">
             <div className="flex items-center gap-4">
@@ -225,19 +241,6 @@ export default function UserAdsPage() {
               <div>
                 <p className="text-sm text-muted-foreground">Active Ads</p>
                 <p className="text-2xl font-bold">{stats.activeAds}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-card/50 border-border/50">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-yellow-500/10">
-                <Clock className="h-6 w-6 text-yellow-500" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Pending Review</p>
-                <p className="text-2xl font-bold">{stats.pendingAds}</p>
               </div>
             </div>
           </CardContent>

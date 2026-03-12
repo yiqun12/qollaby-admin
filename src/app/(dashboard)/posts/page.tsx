@@ -33,15 +33,15 @@ import {
   FileText,
   Heart,
   LayoutGrid,
-  MessageCircle,
   Play,
   RefreshCw,
   Repeat,
   Search,
   TrendingUp,
+  Users,
   X,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 // Combined type for Post and ExchangeListing display
@@ -57,31 +57,33 @@ type ItemWithStats = PostOrExchange & {
 
 export default function PostsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<ItemWithStats[]>([]);
   const [stats, setStats] = useState({ totalPosts: 0, recentPosts: 0 });
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(() => Number(searchParams.get("page")) || 1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
-  const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState<"all" | "post" | "event" | "exchange">("all");
+  const [search, setSearch] = useState(() => searchParams.get("search") || "");
+  const [typeFilter, setTypeFilter] = useState<"all" | "post" | "event" | "exchange">(() => (searchParams.get("type") as "all" | "post" | "event" | "exchange") || "all");
   
   // Location filters
   const [states, setStates] = useState<string[]>([]);
   const [cities, setCities] = useState<Location[]>([]);
-  const [stateFilter, setStateFilter] = useState("");
-  const [cityFilter, setCityFilter] = useState("");
+  const [stateFilter, setStateFilter] = useState(() => searchParams.get("state") || "");
+  const [cityFilter, setCityFilter] = useState(() => searchParams.get("city") || "");
   const [loadingCities, setLoadingCities] = useState(false);
   
   // Location picker
   const [selectedLocation, setSelectedLocation] = useState<PlaceValue | null>(null);
   
   // Radius filter for distance-based search
-  const [searchRadius, setSearchRadius] = useState<RadiusOption>(0);
+  const [searchRadius, setSearchRadius] = useState<RadiusOption>(() => (Number(searchParams.get("radius")) || 0) as RadiusOption);
   
   // Category filters
-  const [categoryFilter, setCategoryFilter] = useState("");
-  const [subcategoryFilter, setSubcategoryFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState(() => searchParams.get("category") || "");
+  const [subcategoryFilter, setSubcategoryFilter] = useState(() => searchParams.get("subcategory") || "");
   
   // Dynamic categories
   const [dynamicCategories, setDynamicCategories] = useState<Category[]>([]);
@@ -215,6 +217,21 @@ export default function PostsPage() {
   useEffect(() => {
     setPage(1);
   }, [search, typeFilter, stateFilter, cityFilter, categoryFilter, subcategoryFilter]);
+
+  // Sync filter state to URL params
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (search) params.set("search", search);
+    if (typeFilter !== "all") params.set("type", typeFilter);
+    if (stateFilter) params.set("state", stateFilter);
+    if (cityFilter) params.set("city", cityFilter);
+    if (categoryFilter) params.set("category", categoryFilter);
+    if (subcategoryFilter) params.set("subcategory", subcategoryFilter);
+    if (searchRadius > 0) params.set("radius", String(searchRadius));
+    if (page > 1) params.set("page", String(page));
+    const qs = params.toString();
+    router.replace(qs ? `?${qs}` : "/posts", { scroll: false });
+  }, [search, typeFilter, stateFilter, cityFilter, categoryFilter, subcategoryFilter, searchRadius, page, router]);
 
   // Load states and categories on mount
   useEffect(() => {
@@ -690,7 +707,7 @@ function PostCard({ post, onClick, showDistance = false }: PostCardProps) {
                 <span>{post.computedLikeCount}</span>
             </div>
             <div className="flex items-center gap-1">
-                <MessageCircle className="h-4 w-4" />
+                <Users className="h-4 w-4" />
                 <span>{post.computedStampCount}</span>
               </div>
             </div>
@@ -708,7 +725,7 @@ function PostCard({ post, onClick, showDistance = false }: PostCardProps) {
               {post.computedLikeCount}
             </span>
             <span className="flex items-center gap-1">
-              <MessageCircle className="h-3 w-3" />
+              <Users className="h-3 w-3" />
               {post.computedStampCount}
             </span>
           </div>

@@ -373,10 +373,13 @@ const LocationPicker: React.FC<LocationPickerProps> = ({
 
   // Update input value when external value changes
   useEffect(() => {
-    if (value?.address !== undefined) {
+    if (value === null || value === undefined) {
+      setInputValue('');
+      setHasSelected(false);
+    } else if (value.address !== undefined) {
       setInputValue(value.address);
     }
-  }, [value?.address]);
+  }, [value]);
 
   // Detect current location
   const detectCurrentLocation = useCallback(async () => {

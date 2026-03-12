@@ -437,7 +437,7 @@ export default function AppealsPage() {
                                   action: "approve",
                                 })
                               }
-                              className="border-green-500/50 text-green-500 hover:bg-green-500/10"
+                              className="border-green-500/50 text-green-500 hover:bg-green-500/20 hover:text-green-400"
                             >
                               <CheckCircle className="h-4 w-4 mr-1" />
                               Approve
@@ -452,7 +452,7 @@ export default function AppealsPage() {
                                   action: "reject",
                                 })
                               }
-                              className="border-red-500/50 text-red-500 hover:bg-red-500/10"
+                              className="border-red-500/50 text-red-500 hover:bg-red-500/20 hover:text-red-400"
                             >
                               <XCircle className="h-4 w-4 mr-1" />
                               Reject

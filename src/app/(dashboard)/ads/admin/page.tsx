@@ -108,6 +108,9 @@ interface EditAdForm {
   slot: AdSlot | null;
   phoneNumber: string;
   website: string;
+  existingMedia: string[];
+  newMediaFiles: File[];
+  newMediaPreviews: string[];
 }
 
 export default function AdminAdsPage() {
@@ -138,6 +141,9 @@ export default function AdminAdsPage() {
     slot: null,
     phoneNumber: "",
     website: "",
+    existingMedia: [],
+    newMediaFiles: [],
+    newMediaPreviews: [],
   });
   const [updating, setUpdating] = useState(false);
   const [editSlotUsageCounts, setEditSlotUsageCounts] = useState<SlotUsageInfo>({});
@@ -211,7 +217,10 @@ export default function AdminAdsPage() {
   }, [createForm.category]);
 
   const handleCreateAd = async () => {
-    if (!admin?.profile?.userId) return;
+    if (!admin?.profile?.userId) {
+      alert("Authentication error. Please log in again.");
+      return;
+    }
     if (!createForm.title || !createForm.state || !createForm.city || !createForm.category || !createForm.slot) {
       alert("Please fill in all required fields");
       return;
@@ -223,14 +232,14 @@ export default function AdminAdsPage() {
 
     setCreating(true);
     try {
-      const mediaIds = await uploadFiles(createForm.mediaFiles);
+      const mediaUrls = await uploadFiles(createForm.mediaFiles);
       
       await createSponsorAd({
         userId: admin.profile.userId,
         title: createForm.title,
         description: createForm.description || undefined,
         externalLink: createForm.externalLink || undefined,
-        media: mediaIds,
+        media: mediaUrls,
         state: createForm.state,
         city: createForm.city,
         category: createForm.category,
@@ -244,9 +253,9 @@ export default function AdminAdsPage() {
       setShowCreateDialog(false);
       setCreateForm(initialFormState);
       fetchAds();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to create ad:", error);
-      alert("Failed to create ad. Please try again.");
+      alert(error?.message || "Failed to create ad. Please try again.");
     } finally {
       setCreating(false);
     }
@@ -274,10 +283,6 @@ export default function AdminAdsPage() {
     ]);
     setDynamicCategories(cats);
 
-    const displaySlot = ad.slot !== undefined ? ad.slot + 1 : null;
-    if (displaySlot && usage[displaySlot]) {
-      usage[displaySlot] = Math.max(0, usage[displaySlot] - 1);
-    }
     setEditSlotUsageCounts(usage);
 
     setEditingAd(ad);
@@ -300,6 +305,9 @@ export default function AdminAdsPage() {
       slot: ad.slot !== undefined ? (ad.slot + 1) as AdSlot : null,
       phoneNumber: ad.phoneNumber || "",
       website: ad.website || "",
+      existingMedia: ad.media || [],
+      newMediaFiles: [],
+      newMediaPreviews: [],
     });
     setShowEditDialog(true);
   };
@@ -339,12 +347,25 @@ export default function AdminAdsPage() {
       return;
     }
 
+    if (editForm.existingMedia.length === 0 && editForm.newMediaFiles.length === 0) {
+      alert("Please include at least one photo or video");
+      return;
+    }
+
     setUpdating(true);
     try {
+      let finalMedia = [...editForm.existingMedia];
+
+      if (editForm.newMediaFiles.length > 0) {
+        const newMediaUrls = await uploadFiles(editForm.newMediaFiles);
+        finalMedia = [...finalMedia, ...newMediaUrls];
+      }
+
       await updateSponsorAd(editingAd.$id, {
         title: editForm.title,
         description: editForm.description || undefined,
         externalLink: editForm.externalLink || undefined,
+        media: finalMedia,
         state: editForm.state,
         city: editForm.city,
         category: editForm.category,
@@ -353,6 +374,7 @@ export default function AdminAdsPage() {
         phoneNumber: editForm.phoneNumber || undefined,
         website: editForm.website || undefined,
       });
+      editForm.newMediaPreviews.forEach((url) => URL.revokeObjectURL(url));
       setShowEditDialog(false);
       setEditingAd(null);
       fetchAds();
@@ -421,7 +443,7 @@ export default function AdminAdsPage() {
       />
 
       {/* Stats Cards - Row 1 */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2">
         <Card className="bg-card/50 border-border/50">
           <CardContent className="pt-6">
             <div className="flex items-center gap-4">
@@ -444,19 +466,6 @@ export default function AdminAdsPage() {
               <div>
                 <p className="text-sm text-muted-foreground">Active Ads</p>
                 <p className="text-2xl font-bold">{stats.activeAds}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-card/50 border-border/50">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-yellow-500/10">
-                <Clock className="h-6 w-6 text-yellow-500" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Pending</p>
-                <p className="text-2xl font-bold">{stats.pendingAds}</p>
               </div>
             </div>
           </CardContent>
@@ -571,15 +580,29 @@ export default function AdminAdsPage() {
                         <>
                           {(() => {
                             const firstMedia = ad.media?.[0] || ad.image || "";
-                            const mediaUrl = isVideoUrl(firstMedia)
-                              ? getVideoUrl(firstMedia)
-                              : getImageUrl(firstMedia, 300, 400);
+                            const isVideo = isVideoUrl(firstMedia);
                             return (
-                              <img
-                                src={mediaUrl}
-                                alt=""
-                                className="w-full h-full object-cover"
-                              />
+                              <>
+                                {isVideo ? (
+                                  <video
+                                    src={getVideoUrl(firstMedia)}
+                                    muted
+                                    playsInline
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <img
+                                    src={getImageUrl(firstMedia, 300, 400)}
+                                    alt=""
+                                    className="w-full h-full object-cover"
+                                  />
+                                )}
+                                {isVideo && (
+                                  <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                                    <Play className="h-8 w-8 text-white/80" />
+                                  </div>
+                                )}
+                              </>
                             );
                           })()}
                           <div className="absolute top-2 left-2 z-10 px-2 py-1 rounded-md bg-black/70 text-white text-sm font-bold shadow">
@@ -882,6 +905,56 @@ export default function AdminAdsPage() {
             style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}
           >
           <div className="space-y-4 pb-4">
+            {/* Existing Media */}
+            {editForm.existingMedia.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Current Media</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {editForm.existingMedia.map((url, idx) => (
+                    <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-border/50 group">
+                      {isVideoUrl(url) ? (
+                        <>
+                          <video src={getVideoUrl(url)} muted playsInline className="w-full h-full object-cover" />
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none">
+                            <Play className="h-6 w-6 text-white/80" />
+                          </div>
+                          <div className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/70 text-white text-xs pointer-events-none">
+                            Video
+                          </div>
+                        </>
+                      ) : (
+                        <img src={getImageUrl(url, 200, 200)} alt="" className="w-full h-full object-cover" />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setEditForm((prev) => ({
+                          ...prev,
+                          existingMedia: prev.existingMedia.filter((_, i) => i !== idx),
+                        }))}
+                        className="absolute top-1 right-1 p-1 rounded-full bg-red-500/80 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Add New Media */}
+            <MediaUpload
+              value={{
+                files: editForm.newMediaFiles,
+                previews: editForm.newMediaPreviews,
+              }}
+              onChange={({ files, previews }) =>
+                setEditForm((prev) => ({ ...prev, newMediaFiles: files, newMediaPreviews: previews }))
+              }
+              label="Add New Media"
+              placeholder="Tap to upload new photos or videos"
+              addMoreLabel="Add more"
+            />
+
             {/* Title */}
             <div className="space-y-2">
               <Label htmlFor="edit-title">Title</Label>

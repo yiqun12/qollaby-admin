@@ -194,7 +194,7 @@ export default function UserDetailPage() {
           <Button
             variant="outline"
             onClick={() => setDeleteDialog(true)}
-            className="bg-destructive/10 border-destructive/30 text-destructive hover:bg-destructive/20"
+            className="bg-destructive/10 border-destructive/30 text-destructive hover:bg-destructive/25 hover:border-destructive/50"
           >
             <Trash2 className="h-4 w-4 mr-2" />
             Delete User

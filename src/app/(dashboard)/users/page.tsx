@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   getUsers,
   getUserStats,
@@ -78,20 +78,22 @@ import {
 
 export default function UsersPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<Profile[]>([]);
   const [stats, setStats] = useState({ totalUsers: 0, totalAdmins: 0, recentUsers: 0 });
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(() => Number(searchParams.get("page")) || 1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
-  const [search, setSearch] = useState("");
-  const [roleFilter, setRoleFilter] = useState<UserRole | "all">("all");
-  const [subscriptionFilter, setSubscriptionFilter] = useState<string>("all");
-  const [hasBusinessProfileFilter, setHasBusinessProfileFilter] = useState<"all" | "yes" | "no">("all");
-  const [stateFilter, setStateFilter] = useState<string>("");
-  const [cityFilter, setCityFilter] = useState<string>("");
+  const [search, setSearch] = useState(() => searchParams.get("search") || "");
+  const [roleFilter, setRoleFilter] = useState<UserRole | "all">(() => (searchParams.get("role") as UserRole | "all") || "all");
+  const [subscriptionFilter, setSubscriptionFilter] = useState<string>(() => searchParams.get("plan") || "all");
+  const [hasBusinessProfileFilter, setHasBusinessProfileFilter] = useState<"all" | "yes" | "no">(() => (searchParams.get("bizProfile") as "all" | "yes" | "no") || "all");
+  const [stateFilter, setStateFilter] = useState<string>(() => searchParams.get("state") || "");
+  const [cityFilter, setCityFilter] = useState<string>(() => searchParams.get("city") || "");
   const [selectedLocation, setSelectedLocation] = useState<PlaceValue | null>(null);
-  const [categoryFilter, setCategoryFilter] = useState<string>("");
+  const [categoryFilter, setCategoryFilter] = useState<string>(() => searchParams.get("category") || "");
   const [filterOptions, setFilterOptions] = useState<UserFilterOptions>({ states: [], cities: [], categories: [] });
   const [allCategories, setAllCategories] = useState<Category[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -186,6 +188,21 @@ export default function UsersPage() {
     setPage(1);
   }, [search, roleFilter, subscriptionFilter, hasBusinessProfileFilter, stateFilter, cityFilter, categoryFilter]);
 
+  // Sync filter state to URL params
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (search) params.set("search", search);
+    if (roleFilter !== "all") params.set("role", roleFilter);
+    if (subscriptionFilter !== "all") params.set("plan", subscriptionFilter);
+    if (hasBusinessProfileFilter !== "all") params.set("bizProfile", hasBusinessProfileFilter);
+    if (stateFilter) params.set("state", stateFilter);
+    if (cityFilter) params.set("city", cityFilter);
+    if (categoryFilter) params.set("category", categoryFilter);
+    if (page > 1) params.set("page", String(page));
+    const qs = params.toString();
+    router.replace(qs ? `?${qs}` : "/users", { scroll: false });
+  }, [search, roleFilter, subscriptionFilter, hasBusinessProfileFilter, stateFilter, cityFilter, categoryFilter, page, router]);
+
   // Clear filters helper
   const clearAllFilters = () => {
     setSearch("");
@@ -236,11 +253,12 @@ export default function UsersPage() {
   };
 
   const handleDelete = async () => {
-    if (!deleteDialog.user) return;
-    setActionLoading(deleteDialog.user.$id);
+    const userToDelete = deleteDialog.user;
+    if (!userToDelete) return;
+    setActionLoading(userToDelete.$id);
+    setDeleteDialog({ open: false, user: null });
     try {
-      await deleteUserProfile(deleteDialog.user.$id);
-      setDeleteDialog({ open: false, user: null });
+      await deleteUserProfile(userToDelete.$id);
       await fetchUsers();
       await fetchStats();
     } catch (error) {
@@ -787,7 +805,7 @@ export default function UsersPage() {
       </Card>
 
       {/* Delete confirmation dialog */}
-      <AlertDialog open={deleteDialog.open} onOpenChange={(open) => setDeleteDialog({ open, user: null })}>
+      <AlertDialog open={deleteDialog.open} onOpenChange={(open) => { if (!open) setDeleteDialog({ open: false, user: null }); }}>
         <AlertDialogContent className="bg-card border-border/50">
           <AlertDialogHeader>
             <AlertDialogTitle>Confirm Delete User</AlertDialogTitle>

@@ -219,7 +219,7 @@ export default function AdDetailPage() {
             size="sm"
             onClick={() => setBlacklistDialog(true)}
             disabled={actionLoading}
-            className={ad.isBlacklisted ? "border-green-500/50 text-green-500 hover:bg-green-500/10" : ""}
+            className={ad.isBlacklisted ? "border-green-500/50 text-green-500 hover:bg-green-500/20 hover:text-green-400" : ""}
           >
             {ad.isBlacklisted ? (
               <>
