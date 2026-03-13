@@ -1,24 +1,8 @@
 import { Account, Client, Databases, ID, Query, Storage } from "appwrite";
 
-function getClientEndpoint(): string {
-  if (typeof window !== "undefined") {
-    return `${window.location.origin}/v1`;
-  }
-
-  return process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT!;
-}
-
-function getPublicEndpoint(): string {
-  if (typeof window !== "undefined") {
-    return `${window.location.origin}/v1`;
-  }
-
-  return process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT!;
-}
-
-// Appwrite configuration - client uses same-origin /v1 proxy to avoid iOS Safari OAuth cookie issues
+// Appwrite configuration - shared with mobile app
 const client = new Client()
-  .setEndpoint(getClientEndpoint())
+  .setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT!)
   .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID!);
 
 export const account = new Account(client);
@@ -94,7 +78,7 @@ export function getImageUrl(fileIdOrUrl: string, width?: number, height?: number
   }
 
   // Build Appwrite Storage preview URL
-  const endpoint = getPublicEndpoint();
+  const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT!;
   const projectId = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID!;
   
   let url = `${endpoint}/storage/buckets/${BUCKET_ID}/files/${fileIdOrUrl}/preview?project=${projectId}`;
@@ -116,7 +100,7 @@ export function getVideoUrl(fileIdOrUrl: string): string {
   }
 
   // Build Appwrite Storage view URL for video
-  const endpoint = getPublicEndpoint();
+  const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT!;
   const projectId = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID!;
   
   return `${endpoint}/storage/buckets/${BUCKET_ID}/files/${fileIdOrUrl}/view?project=${projectId}`;

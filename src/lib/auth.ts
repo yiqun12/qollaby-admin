@@ -9,46 +9,6 @@ export interface AdminUser {
   profile: Profile;
 }
 
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return `${error.name}: ${error.message}`;
-  }
-  if (typeof error === "string") {
-    return error;
-  }
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return String(error);
-  }
-}
-
-export async function logAuthDebug(
-  step: string,
-  details: Record<string, unknown> = {}
-): Promise<void> {
-  if (typeof window === "undefined") return;
-
-  try {
-    await fetch("/api/debug/auth-log", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        step,
-        details,
-        href: window.location.href,
-        origin: window.location.origin,
-        userAgent: navigator.userAgent,
-        timestamp: new Date().toISOString(),
-      }),
-    });
-  } catch (error) {
-    console.error("[auth-debug] failed to send log:", error);
-  }
-}
-
 /**
  * Get current logged in user
  */
@@ -138,87 +98,51 @@ export async function loginWithEmail(email: string, password: string): Promise<A
 }
 
 /**
- * Start Google OAuth flow
+ * Start Google OAuth flow using token-based approach.
+ * Uses createOAuth2Token instead of createOAuth2Session to support
+ * mobile browsers where third-party cookies are blocked (Safari ITP).
  */
 export function loginWithGoogle(): void {
   const successUrl = `${window.location.origin}/auth/callback`;
   const failureUrl = `${window.location.origin}/login?error=oauth_failed`;
-
-  void logAuthDebug("oauth_start", {
+  
+  account.createOAuth2Token(
+    OAuthProvider.Google,
     successUrl,
-    failureUrl,
-  });
-
-  try {
-    account.createOAuth2Session(
-      OAuthProvider.Google,
-      successUrl,
-      failureUrl
-    );
-  } catch (error) {
-    void logAuthDebug("oauth_start_error", {
-      error: getErrorMessage(error),
-    });
-    throw error;
-  }
+    failureUrl
+  );
 }
 
 /**
- * Handle OAuth callback - verify user is admin
+ * Handle OAuth callback - extract token from URL params and create session.
+ * createOAuth2Token redirects back with ?userId=xxx&secret=xxx in the URL.
  */
 export async function handleOAuthCallback(): Promise<AdminUser> {
-  await logAuthDebug("oauth_callback_started");
+  const params = new URLSearchParams(window.location.search);
+  const userId = params.get("userId");
+  const secret = params.get("secret");
 
-  let user: AuthUser | null = null;
-  try {
-    user = await getCurrentUser();
-    await logAuthDebug("oauth_account_get_result", {
-      hasUser: !!user,
-      userId: user?.$id ?? null,
-      email: user?.email ?? null,
-    });
-  } catch (error) {
-    await logAuthDebug("oauth_account_get_error", {
-      error: getErrorMessage(error),
-    });
-    throw error;
+  if (userId && secret) {
+    await account.createSession(userId, secret);
   }
 
+  const user = await getCurrentUser();
+  
   if (!user) {
-    await logAuthDebug("oauth_authentication_failed", {
-      reason: "account_get_returned_null",
-    });
     throw new Error("Authentication failed");
   }
 
   const profile = await getProfileByUserId(user.$id);
-  await logAuthDebug("oauth_profile_result", {
-    hasProfile: !!profile,
-    profileUserId: profile?.userId ?? null,
-    role: profile?.role ?? null,
-  });
-
+  
   if (!profile) {
-    await logAuthDebug("oauth_profile_missing", {
-      userId: user.$id,
-    });
     await logout();
     throw new Error("User profile not found");
   }
 
   if (!isAdmin(profile)) {
-    await logAuthDebug("oauth_not_admin", {
-      userId: user.$id,
-      role: profile.role ?? null,
-    });
     await logout();
     throw new Error("You don't have admin privileges");
   }
-
-  await logAuthDebug("oauth_success", {
-    userId: user.$id,
-    role: profile.role,
-  });
 
   return { user, profile };
 }
