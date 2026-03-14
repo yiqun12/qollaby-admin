@@ -159,11 +159,12 @@ export default function AdDetailPage() {
 
   // Process media array
   const rawMedia = ad.media || (ad.image ? [ad.image] : []);
-  const processedMedia = rawMedia.map((item) => {
+  const processedMedia = rawMedia.map((item, index) => {
     const isVideo = isVideoUrl(item);
     return {
       url: isVideo ? getVideoUrl(item) : getImageUrl(item, 800, 800),
       isVideo,
+      posterUrl: isVideo && index === 0 && ad.image ? getImageUrl(ad.image, 800, 800) : undefined,
     };
   });
 

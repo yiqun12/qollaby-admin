@@ -11,6 +11,7 @@ import {
   SponsorAdStatus,
 } from "@/lib/user-actions";
 import { getImageUrl, getVideoUrl, isVideoUrl } from "@/lib/appwrite";
+import { VideoThumbnail } from "@/components/ui/video-thumbnail";
 import { getCategories, getSubcategories, Category } from "@/lib/category-actions";
 import { getStateFullName } from "@/lib/utils";
 import LocationPicker, { PlaceValue } from "@/components/ui/location-picker";
@@ -396,11 +397,9 @@ export default function UserAdsPage() {
             <>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {ads.map((ad) => {
-                  const firstMedia = ad.media?.[0] || ad.image || "";
-                  const mediaUrl = isVideoUrl(firstMedia)
-                    ? getVideoUrl(firstMedia)
-                    : getImageUrl(firstMedia, 400, 400);
-                  const isVideo = isVideoUrl(firstMedia);
+                  const firstMedia = ad.media?.[0] || "";
+                  const isFirstMediaVideo = isVideoUrl(firstMedia);
+                  const coverImage = ad.image || (!isFirstMediaVideo ? firstMedia : "");
 
                   return (
                     <div
@@ -410,20 +409,19 @@ export default function UserAdsPage() {
                     >
                       {/* Media */}
                       <div className="relative aspect-[4/3]">
-                        {isVideo ? (
-                          <video
-                            src={mediaUrl}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
+                        {coverImage ? (
                           <img
-                            src={mediaUrl}
+                            src={getImageUrl(coverImage, 400, 400)}
                             alt={ad.title}
                             className="w-full h-full object-cover"
                           />
+                        ) : isFirstMediaVideo ? (
+                          <VideoThumbnail src={getVideoUrl(firstMedia)} />
+                        ) : (
+                          <div className="w-full h-full bg-secondary/40" />
                         )}
-                        {isVideo && (
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                        {isFirstMediaVideo && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none">
                             <Play className="h-10 w-10 text-white/80" />
                           </div>
                         )}

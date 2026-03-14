@@ -2095,6 +2095,7 @@ export interface UpdateSponsorAdInput {
   description?: string;
   externalLink?: string;
   media?: string[];
+  image?: string;
   state?: string;
   city?: string;
   category?: string;
@@ -2115,6 +2116,7 @@ export async function updateSponsorAd(
     if (input.description !== undefined) updateData.description = input.description;
     if (input.externalLink !== undefined) updateData.externalLink = input.externalLink;
     if (input.media !== undefined) updateData.media = input.media;
+    if (input.image !== undefined) updateData.image = input.image;
     if (input.state !== undefined) updateData.state = input.state;
     if (input.city !== undefined) updateData.city = input.city;
     if (input.category !== undefined) updateData.category = input.category;
@@ -2232,6 +2234,7 @@ export interface CreateSponsorAdInput {
   title: string;
   description?: string;
   media: string[];
+  image?: string;
   state: string;
   city: string;
   category: string;
@@ -2275,6 +2278,7 @@ export async function createSponsorAd(input: CreateSponsorAdInput): Promise<Spon
         title: input.title,
         description: input.description || "",
         media: input.media,
+        image: input.image || "",
         state: input.state,
         city: input.city,
         category: input.category,

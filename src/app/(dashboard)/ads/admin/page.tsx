@@ -27,6 +27,7 @@ import LocationPicker, { PlaceValue } from "@/components/ui/location-picker";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/AuthContext";
 import { getImageUrl, getVideoUrl, isVideoUrl, uploadFiles } from "@/lib/appwrite";
+import { VideoThumbnail } from "@/components/ui/video-thumbnail";
 import { MediaUpload } from "@/components/ui/media-upload";
 import { Category, getCategories, getSubcategories } from "@/lib/category-actions";
 import {
@@ -76,6 +77,7 @@ interface CreateAdForm {
   slot: AdSlot | null;
   mediaFiles: File[];
   mediaPreviews: string[];
+  posterFiles: Array<File | null>;
   phoneNumber: string;
   website: string;
 }
@@ -92,6 +94,7 @@ const initialFormState: CreateAdForm = {
   slot: null,
   mediaFiles: [],
   mediaPreviews: [],
+  posterFiles: [],
   phoneNumber: "",
   website: "",
 };
@@ -111,6 +114,7 @@ interface EditAdForm {
   existingMedia: string[];
   newMediaFiles: File[];
   newMediaPreviews: string[];
+  newPosterFiles: Array<File | null>;
 }
 
 export default function AdminAdsPage() {
@@ -144,6 +148,7 @@ export default function AdminAdsPage() {
     existingMedia: [],
     newMediaFiles: [],
     newMediaPreviews: [],
+    newPosterFiles: [],
   });
   const [updating, setUpdating] = useState(false);
   const [editSlotUsageCounts, setEditSlotUsageCounts] = useState<SlotUsageInfo>({});
@@ -233,6 +238,20 @@ export default function AdminAdsPage() {
     setCreating(true);
     try {
       const mediaUrls = await uploadFiles(createForm.mediaFiles);
+      const firstMediaUrl = mediaUrls[0] || "";
+
+      let coverImageUrl = "";
+      if (firstMediaUrl) {
+        if (!isVideoUrl(firstMediaUrl)) {
+          coverImageUrl = firstMediaUrl;
+        } else {
+          const firstPoster = createForm.posterFiles[0];
+          if (firstPoster) {
+            const [posterUrl] = await uploadFiles([firstPoster]);
+            coverImageUrl = posterUrl || "";
+          }
+        }
+      }
       
       await createSponsorAd({
         userId: admin.profile.userId,
@@ -240,6 +259,7 @@ export default function AdminAdsPage() {
         description: createForm.description || undefined,
         externalLink: createForm.externalLink || undefined,
         media: mediaUrls,
+        image: coverImageUrl || undefined,
         state: createForm.state,
         city: createForm.city,
         category: createForm.category,
@@ -253,9 +273,10 @@ export default function AdminAdsPage() {
       setShowCreateDialog(false);
       setCreateForm(initialFormState);
       fetchAds();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Failed to create ad:", error);
-      alert(error?.message || "Failed to create ad. Please try again.");
+      const message = error instanceof Error ? error.message : "Failed to create ad. Please try again.";
+      alert(message);
     } finally {
       setCreating(false);
     }
@@ -308,6 +329,7 @@ export default function AdminAdsPage() {
       existingMedia: ad.media || [],
       newMediaFiles: [],
       newMediaPreviews: [],
+      newPosterFiles: [],
     });
     setShowEditDialog(true);
   };
@@ -355,10 +377,35 @@ export default function AdminAdsPage() {
     setUpdating(true);
     try {
       let finalMedia = [...editForm.existingMedia];
+      let newMediaUrls: string[] = [];
 
       if (editForm.newMediaFiles.length > 0) {
-        const newMediaUrls = await uploadFiles(editForm.newMediaFiles);
+        newMediaUrls = await uploadFiles(editForm.newMediaFiles);
         finalMedia = [...finalMedia, ...newMediaUrls];
+      }
+
+      const firstMediaUrl = finalMedia[0] || "";
+      const originalFirstMediaUrl = editingAd.media?.[0] || "";
+      let nextCoverImage = "";
+
+      if (firstMediaUrl) {
+        if (!isVideoUrl(firstMediaUrl)) {
+          nextCoverImage = firstMediaUrl;
+        } else {
+          const firstMediaFromNewUpload = editForm.existingMedia.length === 0;
+
+          if (firstMediaFromNewUpload) {
+            const firstPoster = editForm.newPosterFiles[0];
+            if (firstPoster) {
+              const [posterUrl] = await uploadFiles([firstPoster]);
+              nextCoverImage = posterUrl || "";
+            } else {
+              nextCoverImage = editingAd.image || "";
+            }
+          } else if (firstMediaUrl === originalFirstMediaUrl) {
+            nextCoverImage = editingAd.image || "";
+          }
+        }
       }
 
       await updateSponsorAd(editingAd.$id, {
@@ -366,6 +413,7 @@ export default function AdminAdsPage() {
         description: editForm.description || undefined,
         externalLink: editForm.externalLink || undefined,
         media: finalMedia,
+        image: nextCoverImage,
         state: editForm.state,
         city: editForm.city,
         category: editForm.category,
@@ -570,35 +618,56 @@ export default function AdminAdsPage() {
                     ? `${displaySlot}-${subIndex + 1}`
                     : `${displaySlot}`;
                   return (
-                    <button
+                    <div
                       key={key}
-                      onClick={() => ad ? handleOpenEditDialog(ad) : canAdd && handleClickEmptySlot(displaySlot)}
-                      disabled={!ad && !canAdd}
-                      className="relative aspect-[3/4] transition-all transform hover:scale-[1.02] hover:z-10 rounded-xl overflow-hidden group disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
+                      role={ad || canAdd ? "button" : undefined}
+                      tabIndex={ad || canAdd ? 0 : -1}
+                      aria-disabled={!ad && !canAdd}
+                      onClick={() => {
+                        if (ad) {
+                          handleOpenEditDialog(ad);
+                        } else if (canAdd) {
+                          handleClickEmptySlot(displaySlot);
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (!ad && !canAdd) return;
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          if (ad) {
+                            handleOpenEditDialog(ad);
+                          } else {
+                            handleClickEmptySlot(displaySlot);
+                          }
+                        }
+                      }}
+                      className={`relative aspect-[3/4] transition-all transform rounded-xl overflow-hidden group ${
+                        ad || canAdd
+                          ? "cursor-pointer hover:scale-[1.02] hover:z-10"
+                          : "opacity-60 cursor-not-allowed"
+                      }`}
                     >
                       {ad ? (
                         <>
                           {(() => {
-                            const firstMedia = ad.media?.[0] || ad.image || "";
-                            const isVideo = isVideoUrl(firstMedia);
+                            const firstMedia = ad.media?.[0] || "";
+                            const isFirstMediaVideo = isVideoUrl(firstMedia);
+                            const coverImage = ad.image || (!isFirstMediaVideo ? firstMedia : "");
                             return (
                               <>
-                                {isVideo ? (
-                                  <video
-                                    src={getVideoUrl(firstMedia)}
-                                    muted
-                                    playsInline
-                                    className="w-full h-full object-cover"
-                                  />
-                                ) : (
+                                {coverImage ? (
                                   <img
-                                    src={getImageUrl(firstMedia, 300, 400)}
+                                    src={getImageUrl(coverImage, 300, 400)}
                                     alt=""
                                     className="w-full h-full object-cover"
                                   />
+                                ) : isFirstMediaVideo ? (
+                                  <VideoThumbnail src={getVideoUrl(firstMedia)} />
+                                ) : (
+                                  <div className="w-full h-full bg-secondary/40" />
                                 )}
-                                {isVideo && (
-                                  <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                                {isFirstMediaVideo && (
+                                  <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none">
                                     <Play className="h-8 w-8 text-white/80" />
                                   </div>
                                 )}
@@ -637,7 +706,7 @@ export default function AdminAdsPage() {
                           <span className="text-[10px] opacity-70">{canAdd ? "Empty" : "Full"}</span>
                         </div>
                       )}
-                    </button>
+                    </div>
                   );
                 });
               })()}
@@ -680,9 +749,15 @@ export default function AdminAdsPage() {
               value={{
                 files: createForm.mediaFiles,
                 previews: createForm.mediaPreviews,
+                posters: createForm.posterFiles,
               }}
-              onChange={({ files, previews }) =>
-                setCreateForm((prev) => ({ ...prev, mediaFiles: files, mediaPreviews: previews }))
+              onChange={({ files, previews, posters }) =>
+                setCreateForm((prev) => ({
+                  ...prev,
+                  mediaFiles: files,
+                  mediaPreviews: previews,
+                  posterFiles: posters,
+                }))
               }
               label="Photo/Video"
               placeholder="Tap to upload photos or videos"
@@ -914,11 +989,19 @@ export default function AdminAdsPage() {
                     <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-border/50 group">
                       {isVideoUrl(url) ? (
                         <>
-                          <video src={getVideoUrl(url)} muted playsInline className="w-full h-full object-cover" />
+                          {idx === 0 && editingAd?.image ? (
+                            <img
+                              src={getImageUrl(editingAd.image, 200, 200)}
+                              alt=""
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <VideoThumbnail src={getVideoUrl(url)} />
+                          )}
                           <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none">
                             <Play className="h-6 w-6 text-white/80" />
                           </div>
-                          <div className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/70 text-white text-xs pointer-events-none">
+                          <div className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/70 text-white text-xs pointer-events-none z-10">
                             Video
                           </div>
                         </>
@@ -946,9 +1029,15 @@ export default function AdminAdsPage() {
               value={{
                 files: editForm.newMediaFiles,
                 previews: editForm.newMediaPreviews,
+                posters: editForm.newPosterFiles,
               }}
-              onChange={({ files, previews }) =>
-                setEditForm((prev) => ({ ...prev, newMediaFiles: files, newMediaPreviews: previews }))
+              onChange={({ files, previews, posters }) =>
+                setEditForm((prev) => ({
+                  ...prev,
+                  newMediaFiles: files,
+                  newMediaPreviews: previews,
+                  newPosterFiles: posters,
+                }))
               }
               label="Add New Media"
               placeholder="Tap to upload new photos or videos"

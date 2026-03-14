@@ -8,11 +8,17 @@ import {
   MAX_VIDEO_UPLOAD_LABEL,
   TARGET_VIDEO_MAX_LABEL,
 } from "@/lib/upload-limits";
-import { compressVideo } from "@/lib/video-compress";
+import {
+  compressVideo,
+  extractPosterFromVideo,
+  isMp4File,
+  remuxToMp4,
+} from "@/lib/video-compress";
 
 export interface MediaUploadValue {
   files: File[];
   previews: string[];
+  posters: Array<File | null>;
 }
 
 interface MediaUploadProps {
@@ -56,10 +62,12 @@ export function MediaUpload({
     async (newFiles: File[]) => {
       const newPreviews: string[] = [];
       const resolvedFiles: File[] = [];
+      const newPosters: Array<File | null> = [];
 
       for (let i = 0; i < newFiles.length; i++) {
         const file = newFiles[i];
         const isVideo = file.type.startsWith("video/");
+        let resolvedFile = file;
 
         if (isVideo && file.size > maxVideoSizeBytes) {
           revokePreviews(newPreviews);
@@ -70,23 +78,43 @@ export function MediaUpload({
 
         if (isVideo && file.size > compressVideoToBytes) {
           try {
-            const compressed = await compressVideo(file, compressVideoToBytes);
-            resolvedFiles.push(compressed);
-            newPreviews.push(URL.createObjectURL(compressed));
+            resolvedFile = await compressVideo(file, compressVideoToBytes);
           } catch (err) {
             revokePreviews(newPreviews);
             const message = err instanceof Error ? err.message : "Compression failed";
             throw new Error(`Could not compress "${file.name}": ${message}. Try a smaller video.`);
           }
+        } else if (isVideo && !isMp4File(file)) {
+          // Non-MP4 videos (MOV, AVI, etc.) need container conversion for cross-browser compatibility
+          try {
+            resolvedFile = await remuxToMp4(file);
+          } catch (err) {
+            revokePreviews(newPreviews);
+            const message = err instanceof Error ? err.message : "Conversion failed";
+            throw new Error(`Could not convert "${file.name}" to MP4: ${message}. Try a different video.`);
+          }
+        }
+
+        resolvedFiles.push(resolvedFile);
+        newPreviews.push(URL.createObjectURL(resolvedFile));
+
+        if (isVideo) {
+          try {
+            const poster = await extractPosterFromVideo(resolvedFile);
+            newPosters.push(poster);
+          } catch (err) {
+            console.warn("[MediaUpload] Failed to extract poster:", err);
+            newPosters.push(null);
+          }
         } else {
-          resolvedFiles.push(file);
-          newPreviews.push(URL.createObjectURL(file));
+          newPosters.push(null);
         }
       }
 
       onChange({
         files: [...value.files, ...resolvedFiles],
         previews: [...value.previews, ...newPreviews],
+        posters: [...(value.posters || []), ...newPosters],
       });
     },
     [value, onChange, maxVideoSizeBytes, compressVideoToBytes, revokePreviews]
@@ -115,6 +143,7 @@ export function MediaUpload({
       onChange({
         files: value.files.filter((_, i) => i !== index),
         previews: value.previews.filter((_, i) => i !== index),
+        posters: (value.posters || []).filter((_, i) => i !== index),
       });
     },
     [value, onChange]
@@ -127,7 +156,7 @@ export function MediaUpload({
         {label} <span className="text-red-500">*</span>
       </p>
       <p className="text-xs text-muted-foreground">
-        Video max {MAX_VIDEO_UPLOAD_LABEL}; files over {TARGET_VIDEO_MAX_LABEL} are compressed automatically.
+        Video max {MAX_VIDEO_UPLOAD_LABEL}; non-MP4 videos auto-converted; files over {TARGET_VIDEO_MAX_LABEL} compressed.
       </p>
 
       <input
