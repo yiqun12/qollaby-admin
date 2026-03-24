@@ -1673,9 +1673,9 @@ export async function getAdminAdsBySlot(): Promise<Map<number, SponsorAd[]>> {
 export async function getSponsorAds(params: SponsorAdListParams = {}): Promise<SponsorAdListResult> {
   const { page = 1, limit = 20, search, status = "all", state, city, category, subcategory, isAdminCreated } = params;
   const offset = (page - 1) * limit;
+  const t0 = performance.now();
 
   try {
-    // User ads: sort by slot number; admin/other: sort by created time
     const orderQuery =
       isAdminCreated === false
         ? Query.orderAsc("slot")
@@ -1699,13 +1699,10 @@ export async function getSponsorAds(params: SponsorAdListParams = {}): Promise<S
       countQueries.push(Query.contains("title", search.trim()));
     }
 
-    // Filter by admin/user created
     if (isAdminCreated === true) {
-      // Only admin-created ads
       queries.push(Query.equal("isAdminCreated", true));
       countQueries.push(Query.equal("isAdminCreated", true));
     } else if (isAdminCreated === false) {
-      // User ads: either isAdminCreated is false OR field is null (old ads without this field)
       queries.push(Query.or([
         Query.isNull("isAdminCreated"),
         Query.equal("isAdminCreated", false)
@@ -1716,25 +1713,21 @@ export async function getSponsorAds(params: SponsorAdListParams = {}): Promise<S
       ]));
     }
 
-    // Filter by state
     if (state && state.trim()) {
       queries.push(Query.equal("state", state.trim()));
       countQueries.push(Query.equal("state", state.trim()));
     }
 
-    // Filter by city
     if (city && city.trim()) {
       queries.push(Query.equal("city", city.trim()));
       countQueries.push(Query.equal("city", city.trim()));
     }
 
-    // Filter by category
     if (category && category.trim()) {
       queries.push(Query.equal("category", category.trim()));
       countQueries.push(Query.equal("category", category.trim()));
     }
 
-    // Filter by subcategory
     if (subcategory && subcategory.trim()) {
       queries.push(Query.equal("subcategory", subcategory.trim()));
       countQueries.push(Query.equal("subcategory", subcategory.trim()));
@@ -1752,6 +1745,8 @@ export async function getSponsorAds(params: SponsorAdListParams = {}): Promise<S
         countQueries
       ),
     ]);
+
+    console.log(`[perf] getSponsorAds: ${(performance.now() - t0).toFixed(0)}ms (${adsRes.documents.length} docs, total ${totalRes.total})`);
 
     return {
       ads: adsRes.documents as unknown as SponsorAd[],
@@ -1791,14 +1786,12 @@ export async function getSponsorAdStats(isAdminCreated?: boolean): Promise<{
   activeAds: number;
   pendingAds: number;
 }> {
+  const t0 = performance.now();
   try {
-    // Base queries for filtering by admin/user
     const baseQueries: string[] = [];
     if (isAdminCreated === true) {
-      // Only admin-created ads
       baseQueries.push(Query.equal("isAdminCreated", true));
     } else if (isAdminCreated === false) {
-      // User ads: either isAdminCreated is false OR field is null
       baseQueries.push(Query.or([
         Query.isNull("isAdminCreated"),
         Query.equal("isAdminCreated", false)
@@ -1823,6 +1816,8 @@ export async function getSponsorAdStats(isAdminCreated?: boolean): Promise<{
       ),
     ]);
 
+    console.log(`[perf] getSponsorAdStats: ${(performance.now() - t0).toFixed(0)}ms`);
+
     return {
       totalAds: totalRes.total,
       activeAds: activeRes.total,
@@ -1843,6 +1838,7 @@ export async function getAdMetrics(isAdminCreated?: boolean): Promise<{
   totalClicks: number;
   ctr: number;
 }> {
+  const t0 = performance.now();
   try {
     const baseQueries: string[] = [];
     if (isAdminCreated === true) {
@@ -1859,6 +1855,7 @@ export async function getAdMetrics(isAdminCreated?: boolean): Promise<{
     const pageSize = 500;
     let offset = 0;
     let hasMore = true;
+    let pages = 0;
 
     while (hasMore) {
       const res = await databases.listDocuments(
@@ -1873,9 +1870,12 @@ export async function getAdMetrics(isAdminCreated?: boolean): Promise<{
         totalClicks += ad.clicks || 0;
       }
 
+      pages++;
       offset += pageSize;
       hasMore = offset < res.total;
     }
+
+    console.log(`[perf] getAdMetrics: ${(performance.now() - t0).toFixed(0)}ms (${pages} pages, ${offset > pageSize ? offset - pageSize : 0}+ docs scanned)`);
 
     const ctr = totalViews > 0 ? (totalClicks / totalViews) * 100 : 0;
     return { totalViews, totalClicks, ctr };
@@ -2172,6 +2172,7 @@ export async function getAdLikeCount(adId: string): Promise<number> {
  * Batch get likes counts for multiple ads
  */
 export async function getAdsLikeCounts(adIds: string[]): Promise<Map<string, number>> {
+  const t0 = performance.now();
   const result = new Map<string, number>();
   if (adIds.length === 0) return result;
 
@@ -2187,6 +2188,8 @@ export async function getAdsLikeCounts(adIds: string[]): Promise<Map<string, num
       const adId = doc.adId as string;
       result.set(adId, (result.get(adId) || 0) + 1);
     });
+
+    console.log(`[perf] getAdsLikeCounts: ${(performance.now() - t0).toFixed(0)}ms (${res.documents.length} likes for ${adIds.length} ads)`);
 
     return result;
   } catch (error) {

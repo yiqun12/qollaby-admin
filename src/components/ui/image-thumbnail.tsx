@@ -10,20 +10,19 @@ interface ImageThumbnailProps {
   maxRetries?: number;
 }
 
+const LOAD_TIMEOUT_MS = 15_000;
+
 function ImageThumbnailInner({
   src,
   alt,
   className = "w-full h-full object-cover",
   maxRetries = 2,
 }: ImageThumbnailProps) {
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const imgRef = useRef<HTMLImageElement>(null);
-
-  useEffect(() => {
-    setStatus("loading");
-    setRetryCount(0);
-  }, [src]);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const getUrl = useCallback(
     (attempt: number) => {
@@ -34,28 +33,88 @@ function ImageThumbnailInner({
     [src]
   );
 
+  useEffect(() => {
+    setLoaded(false);
+    setFailed(false);
+    setRetryCount(0);
+  }, [src]);
+
+  // Fallback: poll img.complete for browsers/situations where onLoad doesn't fire.
+  // Also acts as a safety net after timeout — if the image finishes loading later,
+  // it overrides the failed state and shows the image.
+  useEffect(() => {
+    if (loaded) return;
+
+    const check = () => {
+      const img = imgRef.current;
+      if (img && img.complete && img.naturalWidth > 0) {
+        setLoaded(true);
+        setFailed(false);
+      }
+    };
+
+    check();
+
+    const id = setInterval(check, 500);
+    return () => clearInterval(id);
+  }, [loaded, failed, retryCount]);
+
+  // Timeout: if neither loaded nor errored after LOAD_TIMEOUT_MS, mark as failed
+  // so the Retry button appears. The <img> stays in DOM so polling can still recover.
+  useEffect(() => {
+    if (loaded || failed) {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      return;
+    }
+
+    timerRef.current = setTimeout(() => {
+      setFailed((prev) => {
+        if (prev) return prev;
+        return true;
+      });
+    }, LOAD_TIMEOUT_MS);
+
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [loaded, failed, retryCount]);
+
   const handleLoad = useCallback(() => {
-    setStatus("ready");
+    setLoaded(true);
+    setFailed(false);
   }, []);
 
   const handleError = useCallback(() => {
+    const img = imgRef.current;
+    if (img && img.complete && img.naturalWidth > 0) {
+      setLoaded(true);
+      setFailed(false);
+      return;
+    }
+
     if (retryCount < maxRetries) {
       const next = retryCount + 1;
       setRetryCount(next);
-      setStatus("loading");
       if (imgRef.current) {
         imgRef.current.src = getUrl(next);
       }
     } else {
-      setStatus("error");
+      setFailed(true);
     }
   }, [getUrl, maxRetries, retryCount]);
 
   const handleManualRetry = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
+      setLoaded(false);
+      setFailed(false);
       setRetryCount(0);
-      setStatus("loading");
       if (imgRef.current) {
         imgRef.current.src = getUrl(0);
       }
@@ -65,25 +124,23 @@ function ImageThumbnailInner({
 
   return (
     <div className="relative w-full h-full bg-secondary/40">
-      {status !== "error" && (
-        <img
-          ref={imgRef}
-          src={getUrl(retryCount)}
-          alt={alt}
-          className={className}
-          onLoad={handleLoad}
-          onError={handleError}
-        />
-      )}
+      <img
+        ref={imgRef}
+        src={getUrl(retryCount)}
+        alt={alt}
+        className={`${className} transition-opacity duration-200 ${loaded ? "opacity-100" : "opacity-0"}`}
+        onLoad={handleLoad}
+        onError={handleError}
+      />
 
-      {status === "loading" && (
+      {!loaded && !failed && (
         <div className="absolute inset-0 flex items-center justify-center bg-secondary/20 pointer-events-none">
           <div className="h-5 w-5 border-2 border-muted-foreground/30 border-t-primary rounded-full animate-spin" />
         </div>
       )}
 
-      {status === "error" && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/35">
+      {failed && !loaded && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-secondary/75 backdrop-blur-sm">
           <AlertCircle className="h-6 w-6 text-muted-foreground/70" />
           <button
             type="button"

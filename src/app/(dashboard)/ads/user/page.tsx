@@ -10,7 +10,7 @@ import {
   SponsorAd,
   SponsorAdStatus,
 } from "@/lib/user-actions";
-import { getImageUrl, getVideoUrl, isVideoUrl } from "@/lib/appwrite";
+import { SPONSOR_ADS_BUCKET_ID, isVideoUrl } from "@/lib/appwrite";
 import { ImageThumbnail } from "@/components/ui/image-thumbnail";
 import { VideoThumbnail } from "@/components/ui/video-thumbnail";
 import { getCategories, getSubcategories, Category } from "@/lib/category-actions";
@@ -43,6 +43,60 @@ interface AdWithStats extends SponsorAd {
   computedLikeCount: number;
 }
 
+function getSponsorAdStorageUrl(
+  fileIdOrUrl: string,
+  mode: "preview" | "view",
+  width?: number,
+  height?: number
+): string {
+  const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT!;
+  const projectId = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID!;
+
+  const buildUrl = (fileId: string) => {
+    const url = new URL(
+      `${endpoint}/storage/buckets/${SPONSOR_ADS_BUCKET_ID}/files/${fileId}/${mode}?project=${projectId}`
+    );
+
+    if (mode === "preview" && width) {
+      url.searchParams.set("width", String(width));
+    }
+    if (mode === "preview" && height) {
+      url.searchParams.set("height", String(height));
+    }
+
+    return url.toString();
+  };
+
+  if (!fileIdOrUrl) {
+    return "";
+  }
+
+  if (!fileIdOrUrl.startsWith("http://") && !fileIdOrUrl.startsWith("https://")) {
+    return buildUrl(fileIdOrUrl);
+  }
+
+  try {
+    const url = new URL(fileIdOrUrl);
+    const matched = url.pathname.match(/\/storage\/buckets\/[^/]+\/files\/([^/]+)\/(view|preview)$/);
+
+    if (!matched) {
+      return fileIdOrUrl;
+    }
+
+    return buildUrl(matched[1]);
+  } catch {
+    return fileIdOrUrl;
+  }
+}
+
+function getSponsorAdPreviewUrl(fileIdOrUrl: string, width?: number, height?: number): string {
+  return getSponsorAdStorageUrl(fileIdOrUrl, "preview", width, height);
+}
+
+function getSponsorAdVideoUrl(fileIdOrUrl: string): string {
+  return getSponsorAdStorageUrl(fileIdOrUrl, "view");
+}
+
 export default function UserAdsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -70,7 +124,9 @@ export default function UserAdsPage() {
 
   const fetchAds = useCallback(async () => {
     setLoading(true);
+    const t0 = performance.now();
     try {
+      const tParallel = performance.now();
       const [result, statsData, metricsData] = await Promise.all([
         getSponsorAds({
           page,
@@ -81,14 +137,17 @@ export default function UserAdsPage() {
           city: cityFilter || undefined,
           category: categoryFilter || undefined,
           subcategory: subcategoryFilter || undefined,
-          isAdminCreated: false, // Only user ads
+          isAdminCreated: false,
         }),
-        getSponsorAdStats(false), // Only user-created ads stats
-        getAdMetrics(false), // Only user-created ads metrics
+        getSponsorAdStats(false),
+        getAdMetrics(false),
       ]);
+      console.log(`[ads/user] parallel fetch (ads + stats + metrics): ${(performance.now() - tParallel).toFixed(0)}ms`);
 
+      const tLikes = performance.now();
       const adIds = result.ads.map((ad) => ad.$id);
       const likeCounts = await getAdsLikeCounts(adIds);
+      console.log(`[ads/user] getAdsLikeCounts (${adIds.length} ads): ${(performance.now() - tLikes).toFixed(0)}ms`);
 
       const adsWithStats: AdWithStats[] = result.ads.map((ad) => ({
         ...ad,
@@ -104,6 +163,7 @@ export default function UserAdsPage() {
       console.error("Failed to fetch ads:", error);
     } finally {
       setLoading(false);
+      console.log(`[ads/user] total fetchAds: ${(performance.now() - t0).toFixed(0)}ms`);
     }
   }, [page, search, statusFilter, stateFilter, cityFilter, categoryFilter, subcategoryFilter]);
 
@@ -414,14 +474,19 @@ export default function UserAdsPage() {
                       <div className="relative aspect-[4/3]">
                         {coverImage ? (
                           <ImageThumbnail
-                            src={getImageUrl(coverImage, 400, 400)}
+                            src={getSponsorAdPreviewUrl(coverImage, 400, 400)}
                             alt={ad.title}
                             className="w-full h-full object-cover"
                           />
                         ) : firstVideoMedia ? (
-                          <VideoThumbnail src={getVideoUrl(firstVideoMedia)} />
+                          <VideoThumbnail
+                            src={getSponsorAdVideoUrl(firstVideoMedia)}
+                            className="w-full h-full object-cover"
+                          />
                         ) : (
-                          <div className="w-full h-full bg-secondary/40" />
+                          <div className="w-full h-full bg-secondary/40 flex items-center justify-center">
+                            <Megaphone className="h-10 w-10 text-muted-foreground/30" />
+                          </div>
                         )}
                         {!coverImage && firstVideoMedia && (
                           <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none">
