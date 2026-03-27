@@ -8,6 +8,8 @@ import {
 } from "@/lib/upload-limits";
 import {
   compressVideo,
+  remuxToMp4,
+  isMp4File,
   extractPosterFromVideo,
 } from "@/lib/video-compress";
 
@@ -70,12 +72,35 @@ export function MediaUpload({
         }
 
         if (isVideo) {
-          try {
-            resolvedFile = await compressVideo(file);
-          } catch (err) {
-            revokePreviews(newPreviews);
-            const message = err instanceof Error ? err.message : "Compression failed";
-            throw new Error(`Could not compress "${file.name}": ${message}. Try a smaller video.`);
+          const SKIP_COMPRESS_THRESHOLD = 50 * 1024 * 1024; // 50 MB
+          const alreadyMp4 = isMp4File(file);
+          const smallEnough = file.size <= SKIP_COMPRESS_THRESHOLD;
+
+          if (alreadyMp4 && smallEnough) {
+            // Already a small MP4 — skip compression entirely
+            resolvedFile = file;
+          } else if (alreadyMp4) {
+            // Large MP4 — full compress to shrink
+            try {
+              resolvedFile = await compressVideo(file);
+            } catch (err) {
+              revokePreviews(newPreviews);
+              const message = err instanceof Error ? err.message : "Compression failed";
+              throw new Error(`Could not compress "${file.name}": ${message}. Try a smaller video.`);
+            }
+          } else {
+            // Non-MP4 (MOV, etc.) — try fast remux first, fall back to full compress
+            try {
+              resolvedFile = await remuxToMp4(file);
+            } catch {
+              try {
+                resolvedFile = await compressVideo(file);
+              } catch (err) {
+                revokePreviews(newPreviews);
+                const message = err instanceof Error ? err.message : "Compression failed";
+                throw new Error(`Could not compress "${file.name}": ${message}. Try a smaller video.`);
+              }
+            }
           }
         }
 
