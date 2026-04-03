@@ -7,12 +7,14 @@ import {
   getAdLikeCount,
   blacklistSponsorAd,
   unblacklistSponsorAd,
-  updateSponsorAdStatus,
+  getUserByUserId,
   SponsorAd,
   SponsorAdStatus,
 } from "@/lib/user-actions";
+import { Profile } from "@/types/profile.types";
 import { getImageUrl, getVideoUrl, isVideoUrl } from "@/lib/appwrite";
-import { getCategoryLabel, getSubCategoryLabel } from "@/lib/categories";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { getAllCategories, getCategoryLabel, getSubCategoryLabel, getSlotLabel, Category } from "@/lib/category-actions";
 import { MediaCarousel } from "@/components/ui/media-carousel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -47,6 +49,10 @@ import {
   RefreshCw,
   XCircle,
   Megaphone,
+  TrendingUp,
+  Shield,
+  Phone,
+  Globe,
 } from "lucide-react";
 
 export default function AdDetailPage() {
@@ -56,13 +62,11 @@ export default function AdDetailPage() {
 
   const [loading, setLoading] = useState(true);
   const [ad, setAd] = useState<SponsorAd | null>(null);
+  const [userProfile, setUserProfile] = useState<Profile | null>(null);
   const [likeCount, setLikeCount] = useState(0);
   const [actionLoading, setActionLoading] = useState(false);
   const [blacklistDialog, setBlacklistDialog] = useState(false);
-  const [statusDialog, setStatusDialog] = useState<{
-    open: boolean;
-    newStatus: SponsorAdStatus | null;
-  }>({ open: false, newStatus: null });
+  const [allCategories, setAllCategories] = useState<Category[]>([]);
 
   const fetchAd = useCallback(async () => {
     setLoading(true);
@@ -73,6 +77,12 @@ export default function AdDetailPage() {
       ]);
       setAd(adData);
       setLikeCount(likes);
+      
+      // Fetch user profile
+      if (adData?.userId) {
+        const profile = await getUserByUserId(adData.userId);
+        setUserProfile(profile);
+      }
     } catch (error) {
       console.error("Failed to fetch ad:", error);
     } finally {
@@ -84,6 +94,7 @@ export default function AdDetailPage() {
     if (adId) {
       fetchAd();
     }
+    getAllCategories().then(setAllCategories);
   }, [adId, fetchAd]);
 
   const handleBlacklist = async () => {
@@ -104,19 +115,13 @@ export default function AdDetailPage() {
     }
   };
 
-  const handleStatusChange = async () => {
-    if (!ad || !statusDialog.newStatus) return;
-    setActionLoading(true);
-    try {
-      await updateSponsorAdStatus(adId, statusDialog.newStatus);
-      await fetchAd();
-    } catch (error) {
-      console.error("Failed to update status:", error);
-    } finally {
-      setActionLoading(false);
-      setStatusDialog({ open: false, newStatus: null });
-    }
+  // Convert stored slot to display slot (stored = display - 1)
+  const getDisplaySlot = (storedSlot: number | undefined): number | undefined => {
+    if (storedSlot === undefined || storedSlot === null) return undefined;
+    return storedSlot + 1;
   };
+  
+  const displaySlot = ad ? getDisplaySlot(ad.slot) : undefined;
 
   if (loading) {
     return (
@@ -143,7 +148,7 @@ export default function AdDetailPage() {
         <AlertTriangle className="h-16 w-16 text-muted-foreground mb-4" />
         <h2 className="text-xl font-semibold mb-2">Ad Not Found</h2>
         <p className="text-muted-foreground mb-6">Could not find the advertisement</p>
-        <Button onClick={() => router.push("/ads")} variant="outline">
+        <Button onClick={() => router.push("/ads/user")} variant="outline">
           <ArrowLeft className="h-4 w-4 mr-2" />
           Back to Ads
         </Button>
@@ -153,20 +158,21 @@ export default function AdDetailPage() {
 
   // Process media array
   const rawMedia = ad.media || (ad.image ? [ad.image] : []);
-  const processedMedia = rawMedia.map((item) => {
+  const processedMedia = rawMedia.map((item, index) => {
     const isVideo = isVideoUrl(item);
     return {
       url: isVideo ? getVideoUrl(item) : getImageUrl(item, 800, 800),
       isVideo,
+      posterUrl: isVideo && index === 0 && ad.image ? getImageUrl(ad.image, 800, 800) : undefined,
     };
   });
 
   const videoCount = processedMedia.filter((m) => m.isVideo).length;
   const imageCount = processedMedia.filter((m) => !m.isVideo).length;
 
-  const categoryLabel = getCategoryLabel(ad.category);
+  const categoryLabel = getCategoryLabel(allCategories, ad.category);
   const subCategoryLabel = ad.subcategory
-    ? getSubCategoryLabel(ad.category, ad.subcategory)
+    ? getSubCategoryLabel(allCategories, ad.subcategory)
     : null;
 
   const formatDate = (dateStr: string) => {
@@ -174,21 +180,6 @@ export default function AdDetailPage() {
       return new Date(dateStr).toLocaleString("en-US");
     } catch {
       return dateStr;
-    }
-  };
-
-  const getStatusColor = (status: SponsorAdStatus) => {
-    switch (status) {
-      case "active":
-        return "bg-green-500/20 text-green-500";
-      case "pending":
-        return "bg-yellow-500/20 text-yellow-600";
-      case "expired":
-        return "bg-gray-500/20 text-gray-400";
-      case "rejected":
-        return "bg-red-500/20 text-red-500";
-      default:
-        return "bg-secondary text-muted-foreground";
     }
   };
 
@@ -200,13 +191,16 @@ export default function AdDetailPage() {
           <Button
             variant="outline"
             size="icon"
-            onClick={() => router.push("/ads")}
+            onClick={() => router.push(ad.isAdminCreated ? "/ads/admin" : "/ads/user")}
             className="bg-secondary/50 border-border/50"
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Ad Details</h1>
+            <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+              <Megaphone className="h-6 w-6 text-primary shrink-0" />
+              Ad Details
+            </h1>
             <p className="text-muted-foreground">View and manage advertisement</p>
           </div>
         </div>
@@ -225,7 +219,7 @@ export default function AdDetailPage() {
             size="sm"
             onClick={() => setBlacklistDialog(true)}
             disabled={actionLoading}
-            className={ad.isBlacklisted ? "border-green-500/50 text-green-500 hover:bg-green-500/10" : ""}
+            className={ad.isBlacklisted ? "border-green-500/50 text-green-500 hover:bg-green-500/20 hover:text-green-400" : ""}
           >
             {ad.isBlacklisted ? (
               <>
@@ -294,6 +288,55 @@ export default function AdDetailPage() {
               <CardTitle className="text-lg">Content</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* User Info with Avatar */}
+              <div className="flex items-center gap-4 pb-3 border-b border-border/30">
+                <Avatar className="h-12 w-12 border-2 border-primary/30">
+                  {userProfile?.avatar ? (
+                    <AvatarImage src={userProfile.avatar} alt={userProfile.firstName} />
+                  ) : null}
+                  <AvatarFallback className="bg-primary/10 text-primary text-sm">
+                    {userProfile ? (
+                      `${userProfile.firstName?.[0] || ""}${userProfile.lastName?.[0] || ""}`
+                    ) : (
+                      <User className="h-5 w-5" />
+                    )}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium truncate">
+                    {userProfile 
+                      ? `${userProfile.firstName} ${userProfile.lastName}`.trim() || "Unknown"
+                      : "Loading..."}
+                  </p>
+                  <p className="text-sm text-primary truncate">
+                    {userProfile?.email || "N/A"}
+                  </p>
+                </div>
+              </div>
+              {/* Admin Badge */}
+              {ad.isAdminCreated && (
+                <div className="flex items-center gap-2 pb-3 border-b border-border/30">
+                  <div className="px-2.5 py-1 rounded-md bg-green-600/20 text-green-500 text-xs font-medium flex items-center gap-1.5">
+                    <Shield className="w-3.5 h-3.5" />
+                    Admin Created Ad
+                  </div>
+                </div>
+              )}
+              {/* Slot Position */}
+              {displaySlot !== undefined && (
+                <div className="flex items-center gap-2">
+                  <p className="text-sm text-muted-foreground">Slot Position</p>
+                  <span
+                    className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium ${
+                      displaySlot === 1 || displaySlot === 10 || displaySlot === 20
+                        ? "bg-red-500/10 text-red-500 border border-red-500/30"
+                        : "bg-amber-500/10 text-amber-600 border border-amber-500/30"
+                    }`}
+                  >
+                    Slot #{displaySlot}
+                  </span>
+                </div>
+              )}
               <div>
                 <p className="text-sm text-muted-foreground mb-1">Title</p>
                 <p className="font-medium">{ad.title || "Untitled"}</p>
@@ -304,37 +347,32 @@ export default function AdDetailPage() {
                   <p className="text-sm whitespace-pre-wrap">{ad.description}</p>
                 </div>
               )}
-            </CardContent>
-          </Card>
-
-          {/* Status Management */}
-          <Card className="bg-card/50 border-border/50">
-            <CardHeader>
-              <CardTitle className="text-lg">Status</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-muted-foreground">Current Status</span>
-                <span className={`px-3 py-1 rounded text-sm font-medium ${getStatusColor(ad.status)}`}>
-                  {ad.status}
-                </span>
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                {(["active", "pending", "expired", "rejected"] as SponsorAdStatus[]).map(
-                  (status) =>
-                    status !== ad.status && (
-                      <Button
-                        key={status}
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setStatusDialog({ open: true, newStatus: status })}
-                        className="bg-secondary/30 border-border/50"
-                      >
-                        Set as {status}
-                      </Button>
-                    )
-                )}
-              </div>
+              {ad.phoneNumber && (
+                <div>
+                  <p className="text-sm text-muted-foreground mb-1">Phone Number</p>
+                  <a
+                    href={`tel:${ad.phoneNumber}`}
+                    className="text-sm text-primary hover:underline flex items-center gap-1"
+                  >
+                    <Phone className="h-3 w-3" />
+                    {ad.phoneNumber}
+                  </a>
+                </div>
+              )}
+              {ad.website && (
+                <div>
+                  <p className="text-sm text-muted-foreground mb-1">Website</p>
+                  <a
+                    href={ad.website}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-primary hover:underline flex items-center gap-1"
+                  >
+                    <Globe className="h-3 w-3" />
+                    {ad.website}
+                  </a>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -347,6 +385,7 @@ export default function AdDetailPage() {
               <StatRow icon={Eye} label="Views" value={ad.views || 0} color="text-blue-500" />
               <StatRow icon={MousePointer} label="Clicks" value={ad.clicks || 0} color="text-green-500" />
               <StatRow icon={Heart} label="Likes" value={likeCount} color="text-pink-500" />
+              <ConversionRow views={ad.views || 0} clicks={ad.clicks || 0} />
             </CardContent>
           </Card>
 
@@ -411,27 +450,7 @@ export default function AdDetailPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Status Change Dialog */}
-      <AlertDialog open={statusDialog.open} onOpenChange={(open) => setStatusDialog({ ...statusDialog, open })}>
-        <AlertDialogContent className="bg-card border-border">
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Change ad status to {statusDialog.newStatus}?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              This will update the advertisement status.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className="bg-secondary/50 border-border/50">
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={handleStatusChange}>
-              Confirm
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+
     </div>
   );
 }
@@ -470,6 +489,26 @@ function InfoRow({ icon: Icon, label, value, mono }: InfoRowProps) {
         <span>{label}</span>
       </div>
       <span className={mono ? "font-mono text-sm" : ""}>{value}</span>
+    </div>
+  );
+}
+
+interface ConversionRowProps {
+  views: number;
+  clicks: number;
+}
+
+function ConversionRow({ views, clicks }: ConversionRowProps) {
+  const rate = views > 0 ? (clicks / views) * 100 : 0;
+  const formattedRate = rate.toFixed(2);
+
+  return (
+    <div className="flex items-center justify-between py-3 border-b border-border/30 last:border-0">
+      <div className="flex items-center gap-3 text-muted-foreground">
+        <TrendingUp className="h-4 w-4 text-orange-500" />
+        <span>Conversion Rate</span>
+      </div>
+      <span className="text-lg font-semibold text-orange-500">{formattedRate}%</span>
     </div>
   );
 }

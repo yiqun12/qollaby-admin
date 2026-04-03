@@ -2,18 +2,29 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ImageThumbnail } from "@/components/ui/image-thumbnail";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import LocationPicker, { PlaceValue } from "@/components/ui/location-picker";
+import { PageHeader } from "@/components/ui/page-header";
+import { RadiusSelector } from "@/components/ui/radius-selector";
 import { getImageUrl, getVideoUrl, isVideoUrl } from "@/lib/appwrite";
+import { calculateDistance, formatDistance, RadiusOption } from "@/lib/geo-utils";
 import {
   getPosts,
+  getExchangeListings,
   getPostsLikeCounts,
   getPostsReportCounts,
   getPostsStampCounts,
   getPostStats,
   Post,
+  ExchangeListing,
   PostListResult,
+  ExchangeListingListResult,
 } from "@/lib/user-actions";
+import { getStates, getLocationsByState, Location } from "@/lib/location-actions";
+import { getCategories, getSubcategories, Category } from "@/lib/category-actions";
+import { getStateFullName } from "@/lib/utils";
 import {
   AlertTriangle,
   Ban,
@@ -23,68 +34,167 @@ import {
   FileText,
   Heart,
   LayoutGrid,
-  MessageCircle,
   Play,
   RefreshCw,
+  Repeat,
   Search,
   TrendingUp,
+  Users,
+  X,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-// Extended post type with computed stats
-interface PostWithStats extends Post {
+// Combined type for Post and ExchangeListing display
+type PostOrExchange = Post | ExchangeListing;
+
+// Extended post type with computed stats and distance
+type ItemWithStats = PostOrExchange & {
   computedLikeCount: number;
   computedReportCount: number;
   computedStampCount: number;
-}
+  computedDistance?: number; // Distance in km from search center
+};
 
 export default function PostsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [loading, setLoading] = useState(true);
-  const [posts, setPosts] = useState<PostWithStats[]>([]);
+  const [items, setItems] = useState<ItemWithStats[]>([]);
   const [stats, setStats] = useState({ totalPosts: 0, recentPosts: 0 });
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(() => Number(searchParams.get("page")) || 1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
-  const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState<"all" | "post" | "event">("all");
+  const [search, setSearch] = useState(() => searchParams.get("search") || "");
+  const [typeFilter, setTypeFilter] = useState<"all" | "post" | "event" | "exchange">(() => (searchParams.get("type") as "all" | "post" | "event" | "exchange") || "all");
+  
+  // Location filters
+  const [states, setStates] = useState<string[]>([]);
+  const [cities, setCities] = useState<Location[]>([]);
+  const [stateFilter, setStateFilter] = useState(() => searchParams.get("state") || "");
+  const [cityFilter, setCityFilter] = useState(() => searchParams.get("city") || "");
+  const [loadingCities, setLoadingCities] = useState(false);
+  
+  // Location picker
+  const [selectedLocation, setSelectedLocation] = useState<PlaceValue | null>(null);
+  
+  // Radius filter for distance-based search
+  const [searchRadius, setSearchRadius] = useState<RadiusOption>(() => (Number(searchParams.get("radius")) || 0) as RadiusOption);
+  
+  // Category filters
+  const [categoryFilter, setCategoryFilter] = useState(() => searchParams.get("category") || "");
+  const [subcategoryFilter, setSubcategoryFilter] = useState(() => searchParams.get("subcategory") || "");
+  
+  // Dynamic categories
+  const [dynamicCategories, setDynamicCategories] = useState<Category[]>([]);
+  const [subcategoriesList, setSubcategoriesList] = useState<Category[]>([]);
+  
+  // Filters are always shown
 
-  const fetchPosts = useCallback(async () => {
+  const fetchItems = useCallback(async () => {
+    console.log("[PostsPage] fetchItems called with filters:", {
+      page,
+      typeFilter,
+      stateFilter,
+      cityFilter,
+      categoryFilter,
+      subcategoryFilter,
+      search,
+    });
     setLoading(true);
     try {
-      const result: PostListResult = await getPosts({
-        page,
-        limit: 20,
-        search: search || undefined,
-        type: typeFilter,
-      });
+      let itemsData: PostOrExchange[] = [];
+      let totalCount = 0;
+      let totalPagesCount = 1;
 
-      // Fetch like, report, and stamp counts for all posts
-      const postIds = result.posts.map((p) => p.$id);
-      const [likeCounts, reportCounts, stampCounts] = await Promise.all([
-        getPostsLikeCounts(postIds),
-        getPostsReportCounts(postIds),
-        getPostsStampCounts(postIds),
-      ]);
+      if (typeFilter === "exchange") {
+        // Fetch from exchange_listings table
+        console.log("[PostsPage] Fetching exchange listings...");
+        const result: ExchangeListingListResult = await getExchangeListings({
+          page,
+          limit: 20,
+          search: search || undefined,
+          state: stateFilter || undefined,
+          city: cityFilter || undefined,
+          category: categoryFilter || undefined,
+          subcategory: subcategoryFilter || undefined,
+        });
+        console.log("[PostsPage] Exchange listings result:", {
+          total: result.total,
+          listingsCount: result.listings.length,
+        });
+        itemsData = result.listings;
+        totalCount = result.total;
+        totalPagesCount = result.totalPages;
+      } else {
+        // Fetch from posts table (post/event types)
+        console.log("[PostsPage] Fetching posts with params:", {
+          page,
+          type: typeFilter,
+          state: stateFilter || undefined,
+          city: cityFilter || undefined,
+          category: categoryFilter || undefined,
+          subcategory: subcategoryFilter || undefined,
+        });
+        const result: PostListResult = await getPosts({
+          page,
+          limit: 20,
+          search: search || undefined,
+          type: typeFilter,
+          state: stateFilter || undefined,
+          city: cityFilter || undefined,
+          category: categoryFilter || undefined,
+          subcategory: subcategoryFilter || undefined,
+        });
+        console.log("[PostsPage] Posts result:", {
+          total: result.total,
+          postsCount: result.posts.length,
+          firstPost: result.posts[0] ? {
+            id: result.posts[0].$id,
+            title: result.posts[0].title,
+            // Check if these fields exist in the actual data
+            locationState: (result.posts[0] as any).locationState,
+            locationCity: (result.posts[0] as any).locationCity,
+            locationAddress: result.posts[0].locationAddress,
+          } : null,
+        });
+        itemsData = result.posts;
+        totalCount = result.total;
+        totalPagesCount = result.totalPages;
+      }
 
-      // Merge stats into posts
-      const postsWithStats: PostWithStats[] = result.posts.map((post) => ({
-        ...post,
-        computedLikeCount: likeCounts.get(post.$id) || 0,
-        computedReportCount: reportCounts.get(post.$id) || 0,
-        computedStampCount: stampCounts.get(post.$id) || 0,
+      // Fetch like, report, and stamp counts for all items (only for posts, not exchange)
+      const itemIds = itemsData.map((p) => p.$id);
+      let likeCounts = new Map<string, number>();
+      let reportCounts = new Map<string, number>();
+      let stampCounts = new Map<string, number>();
+
+      if (typeFilter !== "exchange" && itemIds.length > 0) {
+        [likeCounts, reportCounts, stampCounts] = await Promise.all([
+          getPostsLikeCounts(itemIds),
+          getPostsReportCounts(itemIds),
+          getPostsStampCounts(itemIds),
+        ]);
+      }
+
+      // Merge stats into items
+      const itemsWithStats: ItemWithStats[] = itemsData.map((item) => ({
+        ...item,
+        computedLikeCount: likeCounts.get(item.$id) || 0,
+        computedReportCount: reportCounts.get(item.$id) || 0,
+        computedStampCount: stampCounts.get(item.$id) || 0,
       }));
 
-      setPosts(postsWithStats);
-      setTotalPages(result.totalPages);
-      setTotal(result.total);
+      setItems(itemsWithStats);
+      setTotalPages(totalPagesCount);
+      setTotal(totalCount);
     } catch (error) {
-      console.error("Failed to fetch posts:", error);
+      console.error("Failed to fetch items:", error);
     } finally {
       setLoading(false);
     }
-  }, [page, search, typeFilter]);
+  }, [page, search, typeFilter, stateFilter, cityFilter, categoryFilter, subcategoryFilter]);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -96,10 +206,10 @@ export default function PostsPage() {
   }, []);
 
   useEffect(() => {
-    fetchPosts();
+    fetchItems();
     // Scroll to top when page changes
     window.scrollTo({ top: 0, behavior: "smooth" });
-  }, [fetchPosts]);
+  }, [fetchItems]);
 
   useEffect(() => {
     fetchStats();
@@ -107,34 +217,144 @@ export default function PostsPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, typeFilter]);
+  }, [search, typeFilter, stateFilter, cityFilter, categoryFilter, subcategoryFilter]);
+
+  // Sync filter state to URL params
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (search) params.set("search", search);
+    if (typeFilter !== "all") params.set("type", typeFilter);
+    if (stateFilter) params.set("state", stateFilter);
+    if (cityFilter) params.set("city", cityFilter);
+    if (categoryFilter) params.set("category", categoryFilter);
+    if (subcategoryFilter) params.set("subcategory", subcategoryFilter);
+    if (searchRadius > 0) params.set("radius", String(searchRadius));
+    if (page > 1) params.set("page", String(page));
+    const qs = params.toString();
+    router.replace(qs ? `?${qs}` : "/posts", { scroll: false });
+  }, [search, typeFilter, stateFilter, cityFilter, categoryFilter, subcategoryFilter, searchRadius, page, router]);
+
+  // Load states and categories on mount
+  useEffect(() => {
+    getStates().then(setStates);
+    getCategories().then(setDynamicCategories);
+  }, []);
+
+  // Load cities when state changes
+  useEffect(() => {
+    if (stateFilter) {
+      setLoadingCities(true);
+      getLocationsByState(stateFilter)
+        .then(setCities)
+        .finally(() => setLoadingCities(false));
+      setCityFilter(""); // Reset city when state changes
+    } else {
+      setCities([]);
+      setCityFilter("");
+    }
+  }, [stateFilter]);
+
+  // Reset subcategory and fetch subcategories when category changes
+  useEffect(() => {
+    setSubcategoryFilter("");
+    if (categoryFilter) {
+      getSubcategories(categoryFilter).then(setSubcategoriesList);
+    } else {
+      setSubcategoriesList([]);
+    }
+  }, [categoryFilter]);
+
+  // Count active filters (include radius if set)
+  const activeFilterCount = [stateFilter, cityFilter, categoryFilter, subcategoryFilter].filter(Boolean).length + (searchRadius > 0 ? 1 : 0);
+
+  // Filter items by distance if a location and radius are selected
+  const filteredItems = useMemo(() => {
+    // If no location or radius is 0 (any distance), return all items
+    if (!selectedLocation || searchRadius === 0) {
+      return items;
+    }
+
+    const { latitude: centerLat, longitude: centerLng } = selectedLocation;
+
+    return items
+      .map((item) => {
+        // Get location from post - stored as [longitude, latitude]
+        const postLocation = (item as Post).location;
+        
+        if (!postLocation || postLocation.length !== 2) {
+          // No location data, set distance to Infinity so it gets filtered out
+          return { ...item, computedDistance: Infinity };
+        }
+
+        const [lng, lat] = postLocation;
+        const distance = calculateDistance(centerLat, centerLng, lat, lng);
+        
+        return { ...item, computedDistance: distance };
+      })
+      .filter((item) => item.computedDistance <= searchRadius)
+      .sort((a, b) => (a.computedDistance ?? Infinity) - (b.computedDistance ?? Infinity));
+  }, [items, selectedLocation, searchRadius]);
+
+  // Clear all filters
+  const clearFilters = () => {
+    setStateFilter("");
+    setCityFilter("");
+    setCategoryFilter("");
+    setSubcategoryFilter("");
+    setSelectedLocation(null);
+    setSearchRadius(0);
+  };
+
+  // Handle location change - auto apply filter
+  const handleLocationChange = (location: PlaceValue | null) => {
+    console.log("[PostsPage] handleLocationChange called with:", {
+      location,
+      state: location?.state,
+      city: location?.city,
+      address: location?.address,
+    });
+    setSelectedLocation(location);
+    if (location?.state) {
+      // Convert state abbreviation (e.g., "CA") to full name (e.g., "California")
+      // because the database stores full state names
+      const stateFullName = getStateFullName(location.state);
+      console.log("[PostsPage] Setting filters - state:", location.state, "->", stateFullName, "city:", location.city || "");
+      setStateFilter(stateFullName);
+      setCityFilter(location.city || "");
+    } else {
+      console.log("[PostsPage] Clearing location filters");
+      setStateFilter("");
+      setCityFilter("");
+    }
+  };
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    fetchPosts();
+    fetchItems();
   };
 
   return (
     <div className="space-y-6">
       {/* Page header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Posts</h1>
-          <p className="text-muted-foreground">View all posts and their statistics</p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            fetchPosts();
-            fetchStats();
-          }}
-          className="w-fit"
-        >
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh
-        </Button>
-      </div>
+      <PageHeader
+        title="Posts"
+        description="View all posts and their statistics"
+        icon={FileText}
+        children={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              fetchItems();
+              fetchStats();
+            }}
+            className="w-fit"
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
+        }
+      />
 
       {/* Stats cards */}
       <div className="grid gap-4 md:grid-cols-2">
@@ -164,22 +384,22 @@ export default function PostsPage() {
 
       {/* Search and Filters */}
       <Card className="bg-card/50 border-border/50">
-        <CardContent className="pt-6">
+        <CardContent className="pt-6 space-y-4">
           <div className="flex flex-col sm:flex-row gap-4">
             {/* Search */}
             <form onSubmit={handleSearch} className="flex-1">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
                   placeholder="Search posts by title..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-10 bg-input/50 border-border/50"
-              />
-            </div>
-          </form>
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-10 bg-input/50 border-border/50"
+                />
+              </div>
+            </form>
             {/* Type filter */}
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <Button
                 variant={typeFilter === "all" ? "default" : "outline"}
                 size="sm"
@@ -207,7 +427,92 @@ export default function PostsPage() {
                 <Calendar className="h-4 w-4 mr-1" />
                 Events
               </Button>
+              <Button
+                variant={typeFilter === "exchange" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setTypeFilter("exchange")}
+                className={typeFilter === "exchange" ? "bg-primary" : "bg-secondary/50 border-border/50"}
+              >
+                <Repeat className="h-4 w-4 mr-1" />
+                Exchange
+              </Button>
             </div>
+          </div>
+
+          {/* Filters panel - always visible */}
+          <div className="pt-4 border-t border-border/30 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                {/* Location filter - inline picker */}
+                <div className="space-y-1.5 sm:col-span-2">
+                  <label className="text-xs font-medium text-muted-foreground">Location</label>
+                  <LocationPicker
+                    value={selectedLocation}
+                    onChange={handleLocationChange}
+                    placeholder="Search city or address..."
+                    countryRestriction="us"
+                    showCurrentLocation={false}
+                  />
+                </div>
+
+                {/* Radius filter */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">Search Radius</label>
+                  <RadiusSelector
+                    value={searchRadius}
+                    onChange={setSearchRadius}
+                    disabled={!selectedLocation}
+                  />
+                  {!selectedLocation && searchRadius === 0 && (
+                    <p className="text-xs text-muted-foreground/70">Select a location first</p>
+                  )}
+                </div>
+
+                {/* Category filter */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">Category</label>
+                  <select
+                    value={categoryFilter}
+                    onChange={(e) => setCategoryFilter(e.target.value)}
+                    className="w-full h-9 px-3 rounded-md border border-border/50 bg-input/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  >
+                    <option value="">All Categories</option>
+                    {dynamicCategories.map((cat) => (
+                      <option key={cat.value} value={cat.value}>{cat.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Subcategory filter */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">Subcategory</label>
+                  <select
+                    value={subcategoryFilter}
+                    onChange={(e) => setSubcategoryFilter(e.target.value)}
+                    disabled={!categoryFilter}
+                    className="w-full h-9 px-3 rounded-md border border-border/50 bg-input/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <option value="">All Subcategories</option>
+                    {subcategoriesList.map((sub) => (
+                      <option key={sub.value} value={sub.value}>{sub.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Clear filters button */}
+              {activeFilterCount > 0 && (
+                <div className="flex justify-end">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearFilters}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-4 w-4 mr-1" />
+                    Clear Filters
+                  </Button>
+                </div>
+              )}
           </div>
         </CardContent>
       </Card>
@@ -224,18 +529,23 @@ export default function PostsPage() {
                 </div>
               ))}
             </div>
-          ) : posts.length === 0 ? (
+          ) : filteredItems.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>No posts found</p>
+              <p>
+                {searchRadius > 0 && selectedLocation
+                  ? `No ${typeFilter === "exchange" ? "exchange listings" : "posts"} found within ${searchRadius} miles`
+                  : `No ${typeFilter === "exchange" ? "exchange listings" : "posts"} found`}
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {posts.map((post) => (
+              {filteredItems.map((item) => (
                 <PostCard
-                  key={post.$id}
-                  post={post}
-                  onClick={() => router.push(`/posts/${post.$id}`)}
+                  key={item.$id}
+                  post={item}
+                  onClick={() => router.push(typeFilter === "exchange" ? `/posts/${item.$id}?type=exchange` : `/posts/${item.$id}`)}
+                  showDistance={searchRadius > 0 && selectedLocation !== null}
                 />
               ))}
             </div>
@@ -245,7 +555,10 @@ export default function PostsPage() {
           {!loading && totalPages > 1 && (
             <div className="flex items-center justify-between mt-6 pt-4 border-t border-border/30">
               <p className="text-sm text-muted-foreground">
-                {total} posts total, page {page} of {totalPages}
+                {searchRadius > 0 && selectedLocation
+                  ? `${filteredItems.length} of ${total} posts within ${searchRadius} mi`
+                  : `${total} posts total`}
+                , page {page} of {totalPages}
               </p>
               <div className="flex gap-2">
                 <Button
@@ -271,19 +584,20 @@ export default function PostsPage() {
           )}
         </CardContent>
       </Card>
+
     </div>
   );
 }
 
 interface PostCardProps {
-  post: PostWithStats;
+  post: ItemWithStats;
   onClick: () => void;
+  showDistance?: boolean;
 }
 
-function PostCard({ post, onClick }: PostCardProps) {
+function PostCard({ post, onClick, showDistance = false }: PostCardProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isHovering, setIsHovering] = useState(false);
-  const [imgError, setImgError] = useState(false);
   
   // Use `media` field (correct field name from database)
   const firstMedia = post.media?.[0] || null;
@@ -319,7 +633,7 @@ function PostCard({ post, onClick }: PostCardProps) {
     >
       {/* Media */}
       <div className="aspect-square bg-secondary/30 relative overflow-hidden">
-        {mediaUrl && !imgError ? (
+        {mediaUrl ? (
           isVideo ? (
             <>
               <video
@@ -346,12 +660,11 @@ function PostCard({ post, onClick }: PostCardProps) {
               )}
             </>
           ) : (
-            <img
+            <ImageThumbnail
               src={mediaUrl}
               alt={post.title || "Post"}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-              onError={() => setImgError(true)}
-          />
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            />
           )
         ) : (
           <div className="w-full h-full flex items-center justify-center">
@@ -375,6 +688,13 @@ function PostCard({ post, onClick }: PostCardProps) {
               Event
             </div>
           )}
+          {/* Exchange badge */}
+          {post.type === "exchange" && !isVideo && (
+            <div className="px-2 py-1 rounded bg-purple-500/90 text-white text-xs font-medium flex items-center gap-1">
+              <Repeat className="w-3 h-3" />
+              Exchange
+            </div>
+          )}
         </div>
         
         {/* Overlay with stats on hover (for images) */}
@@ -386,7 +706,7 @@ function PostCard({ post, onClick }: PostCardProps) {
                 <span>{post.computedLikeCount}</span>
             </div>
             <div className="flex items-center gap-1">
-                <MessageCircle className="h-4 w-4" />
+                <Users className="h-4 w-4" />
                 <span>{post.computedStampCount}</span>
               </div>
             </div>
@@ -398,22 +718,30 @@ function PostCard({ post, onClick }: PostCardProps) {
       <div className="p-2">
         <p className="text-sm font-medium truncate mb-1">{post.title || "Untitled"}</p>
         <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <div className="flex items-center gap-2">
-          <span className="flex items-center gap-1">
-            <Heart className="h-3 w-3" />
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1">
+              <Heart className="h-3 w-3" />
               {post.computedLikeCount}
-          </span>
-          <span className="flex items-center gap-1">
-              <MessageCircle className="h-3 w-3" />
+            </span>
+            <span className="flex items-center gap-1">
+              <Users className="h-3 w-3" />
               {post.computedStampCount}
-          </span>
-        </div>
-          {post.computedReportCount > 0 && (
-          <span className="flex items-center gap-1 text-destructive">
-            <AlertTriangle className="h-3 w-3" />
-              {post.computedReportCount}
-          </span>
-        )}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            {/* Distance badge */}
+            {showDistance && post.computedDistance !== undefined && post.computedDistance !== Infinity && (
+              <span className="flex items-center gap-0.5 text-primary font-medium">
+                📍 {formatDistance(post.computedDistance)}
+              </span>
+            )}
+            {post.computedReportCount > 0 && (
+              <span className="flex items-center gap-1 text-destructive">
+                <AlertTriangle className="h-3 w-3" />
+                {post.computedReportCount}
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </div>

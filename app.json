@@ -1,0 +1,10 @@
+{
+  "ios": {
+    "bundleIdentifier": "com.truesocialmarketing.qollaby-admin"
+  },
+  "extra": {
+    "eas": {
+      "projectId": "aba993b0-7c59-417c-9e43-5b1d91e3ac49"
+    }
+  }
+}

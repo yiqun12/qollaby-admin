@@ -15,18 +15,25 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MediaCarousel } from "@/components/ui/media-carousel";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getImageUrl, getVideoUrl, isVideoUrl } from "@/lib/appwrite";
-import { getCategoryLabel, getSubCategoryLabel } from "@/lib/categories";
+import { getAllCategories, getCategoryLabel, getSubCategoryLabel, Category } from "@/lib/category-actions";
 import {
   blacklistPost,
+  deletePost,
+  deleteExchangeListing,
   getPostById,
+  getExchangeListingById,
   getPostLikeCount,
   getPostReportCount,
   getPostReports,
   getPostStampCount,
+  getUserByUserId,
   Post,
+  ExchangeListing,
   Report,
   unblacklistPost,
 } from "@/lib/user-actions";
+import { Profile } from "@/types/profile.types";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -40,61 +47,81 @@ import {
   Hash,
   Heart,
   Image as ImageIcon,
+  Loader2,
   MapPin,
-  MessageCircle,
   Play,
   RefreshCw,
   Tag,
-  User
+  Trash2,
+  User,
+  Users
 } from "lucide-react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-
 export default function PostDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const postId = params.postId as string;
+  const isExchange = searchParams.get("type") === "exchange";
 
   const [loading, setLoading] = useState(true);
-  const [post, setPost] = useState<Post | null>(null);
+  const [post, setPost] = useState<Post | ExchangeListing | null>(null);
+  const [userProfile, setUserProfile] = useState<Profile | null>(null);
   const [likeCount, setLikeCount] = useState(0);
   const [reportCount, setReportCount] = useState(0);
   const [stampCount, setStampCount] = useState(0);
   const [reports, setReports] = useState<Report[]>([]);
   const [actionLoading, setActionLoading] = useState(false);
   const [blacklistDialog, setBlacklistDialog] = useState(false);
+  const [deleteDialog, setDeleteDialog] = useState(false);
   const [reportsExpanded, setReportsExpanded] = useState(false);
+  const [allCategories, setAllCategories] = useState<Category[]>([]);
 
   const fetchPost = useCallback(async () => {
     setLoading(true);
     try {
-      const [postData, likes, reportCnt, stamps, reportsList] = await Promise.all([
-        getPostById(postId),
-        getPostLikeCount(postId),
-        getPostReportCount(postId),
-        getPostStampCount(postId),
-        getPostReports(postId),
-      ]);
+      let postData: Post | ExchangeListing | null;
+
+      if (isExchange) {
+        postData = await getExchangeListingById(postId);
+      } else {
+        const [data, likes, reportCnt, stamps, reportsList] = await Promise.all([
+          getPostById(postId),
+          getPostLikeCount(postId),
+          getPostReportCount(postId),
+          getPostStampCount(postId),
+          getPostReports(postId),
+        ]);
+        postData = data;
+        setLikeCount(likes);
+        setReportCount(reportCnt);
+        setStampCount(stamps);
+        setReports(reportsList);
+      }
+
       setPost(postData);
-      setLikeCount(likes);
-      setReportCount(reportCnt);
-      setStampCount(stamps);
-      setReports(reportsList);
+      
+      if (postData?.userId) {
+        const profile = await getUserByUserId(postData.userId);
+        setUserProfile(profile);
+      }
     } catch (error) {
       console.error("Failed to fetch post:", error);
     } finally {
       setLoading(false);
     }
-  }, [postId]);
+  }, [postId, isExchange]);
 
   useEffect(() => {
     if (postId) {
       fetchPost();
     }
+    getAllCategories().then(setAllCategories);
   }, [postId, fetchPost]);
 
   const handleBlacklist = async () => {
-    if (!post) return;
+    if (!post || isExchange) return;
     setActionLoading(true);
     try {
       if (post.isBlacklisted) {
@@ -108,6 +135,24 @@ export default function PostDetailPage() {
     } finally {
       setActionLoading(false);
       setBlacklistDialog(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!post) return;
+    setActionLoading(true);
+    try {
+      const success = isExchange
+        ? await deleteExchangeListing(postId)
+        : await deletePost(postId);
+      if (success) {
+        router.push("/posts");
+      }
+    } catch (error) {
+      console.error("Failed to delete:", error);
+    } finally {
+      setActionLoading(false);
+      setDeleteDialog(false);
     }
   };
 
@@ -159,8 +204,8 @@ export default function PostDetailPage() {
   const imageCount = processedMedia.filter((m) => !m.isVideo).length;
 
   // Format category labels
-  const categoryLabel = getCategoryLabel(post.category);
-  const subCategoryLabel = getSubCategoryLabel(post.category, post.subCategory);
+  const categoryLabel = getCategoryLabel(allCategories, post.category);
+  const subCategoryLabel = getSubCategoryLabel(allCategories, post.subCategory || (post as ExchangeListing).subCategory);
 
   // Format event date
   const formatEventDate = (dateStr: string | null | undefined) => {
@@ -198,38 +243,58 @@ export default function PostDetailPage() {
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Post Details</h1>
-            <p className="text-muted-foreground">View post information and manage reports</p>
-          </div>
+          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+            <FileText className="h-6 w-6 text-primary shrink-0" />
+            {isExchange ? "Exchange Listing Details" : "Post Details"}
+          </h1>
+          <p className="text-muted-foreground">
+            {isExchange ? "View exchange listing information" : "View post information and manage reports"}
+          </p>
+        </div>
         </div>
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
             size="sm"
             onClick={fetchPost}
-            className="bg-secondary/50 border-border/50"
+            className="bg-secondary/50 border-border/50 hover:bg-secondary/80"
           >
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh
           </Button>
+          {!isExchange && (
+            <Button
+              variant={post.isBlacklisted ? "outline" : "destructive"}
+              size="sm"
+              onClick={() => setBlacklistDialog(true)}
+              disabled={actionLoading}
+              className={post.isBlacklisted ? "border-green-500/50 text-green-500 hover:bg-green-500/20 hover:text-green-400" : ""}
+            >
+              {post.isBlacklisted ? (
+                <>
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  Unblock Post
+                </>
+              ) : (
+                <>
+                  <Ban className="h-4 w-4 mr-2" />
+                  Block Post
+                </>
+              )}
+            </Button>
+          )}
           <Button
-            variant={post.isBlacklisted ? "outline" : "destructive"}
+            variant="destructive"
             size="sm"
-            onClick={() => setBlacklistDialog(true)}
+            onClick={() => setDeleteDialog(true)}
             disabled={actionLoading}
-            className={post.isBlacklisted ? "border-green-500/50 text-green-500 hover:bg-green-500/10" : ""}
           >
-            {post.isBlacklisted ? (
-              <>
-                <CheckCircle className="h-4 w-4 mr-2" />
-                Unblock Post
-              </>
+            {actionLoading ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : (
-              <>
-                <Ban className="h-4 w-4 mr-2" />
-                Block Post
-              </>
+              <Trash2 className="h-4 w-4 mr-2" />
             )}
+            Delete
           </Button>
         </div>
       </div>
@@ -287,14 +352,39 @@ export default function PostDetailPage() {
               <CardTitle className="text-lg">Content</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* User Info with Avatar */}
+              <div className="flex items-center gap-4 pb-3 border-b border-border/30">
+                <Avatar className="h-12 w-12 border-2 border-primary/30">
+                  {userProfile?.avatar ? (
+                    <AvatarImage src={userProfile.avatar} alt={userProfile.firstName} />
+                  ) : null}
+                  <AvatarFallback className="bg-primary/10 text-primary text-sm">
+                    {userProfile ? (
+                      `${userProfile.firstName?.[0] || ""}${userProfile.lastName?.[0] || ""}`
+                    ) : (
+                      <User className="h-5 w-5" />
+                    )}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium truncate">
+                    {userProfile 
+                      ? `${userProfile.firstName} ${userProfile.lastName}`.trim() || "Unknown"
+                      : "Loading..."}
+                  </p>
+                  <p className="text-sm text-primary truncate">
+                    {userProfile?.email || "N/A"}
+                  </p>
+                </div>
+              </div>
               <div>
                 <p className="text-sm text-muted-foreground mb-1">Title</p>
                 <p className="font-medium">{post.title || "Untitled"}</p>
               </div>
-              {post.smallDescription && (
+              {!isExchange && (post as Post).smallDescription && (
                 <div>
                   <p className="text-sm text-muted-foreground mb-1">Summary</p>
-                  <p className="text-sm">{post.smallDescription}</p>
+                  <p className="text-sm">{(post as Post).smallDescription}</p>
                 </div>
               )}
               {post.description && (
@@ -303,10 +393,37 @@ export default function PostDetailPage() {
                   <p className="text-sm whitespace-pre-wrap">{post.description}</p>
                 </div>
               )}
+              {isExchange && (post as ExchangeListing).startingPrice != null && (
+                <div>
+                  <p className="text-sm text-muted-foreground mb-1">Starting Price</p>
+                  <p className="font-medium">${(post as ExchangeListing).startingPrice}</p>
+                </div>
+              )}
+              {isExchange && (post as ExchangeListing).transactionType && (
+                <div>
+                  <p className="text-sm text-muted-foreground mb-1">Transaction Type</p>
+                  <p className="text-sm capitalize">{(post as ExchangeListing).transactionType}</p>
+                </div>
+              )}
+              {!isExchange && (post as Post).externalLink && (
+                <div>
+                  <p className="text-sm text-muted-foreground mb-1">External Link</p>
+                  <a
+                    href={(post as Post).externalLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-primary hover:underline flex items-center gap-1"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    {(post as Post).externalLink}
+                  </a>
+                </div>
+              )}
             </CardContent>
           </Card>
 
-          {/* Statistics */}
+          {/* Statistics (posts only) */}
+          {!isExchange && (
           <Card className="bg-card/50 border-border/50">
             <CardHeader>
               <CardTitle className="text-lg">Statistics</CardTitle>
@@ -319,7 +436,7 @@ export default function PostDetailPage() {
                 color="text-pink-500"
               />
               <StatRow
-                icon={MessageCircle}
+                icon={Users}
                 label="Community Count"
                 value={stampCount}
                 color="text-blue-500"
@@ -333,9 +450,10 @@ export default function PostDetailPage() {
               />
             </CardContent>
           </Card>
+          )}
 
-          {/* Reports Section - Collapsible */}
-          {reports.length > 0 && (
+          {/* Reports Section - Collapsible (posts only) */}
+          {!isExchange && reports.length > 0 && (
             <Card className="bg-card/50 border-red-500/30 border">
               <CardHeader 
                 className="cursor-pointer select-none"
@@ -387,62 +505,76 @@ export default function PostDetailPage() {
           )}
 
           {/* Location Info */}
-          {(post.locationAddress || post.userLocationAddress) && (
+          {(isExchange ? ((post as ExchangeListing).locationCity || (post as ExchangeListing).locationState) : ((post as Post).locationAddress || (post as Post).userLocationAddress)) && (
             <Card className="bg-card/50 border-border/50">
               <CardHeader>
                 <CardTitle className="text-lg">Location</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {post.locationAddress && (
-                  <div className="flex items-start justify-between py-3 border-b border-border/30 last:border-0">
-                    <div className="flex items-start gap-3 text-muted-foreground">
-                      <MapPin className="h-4 w-4 mt-0.5 text-green-500" />
-                      <div>
-                        <span className="block text-foreground">Post Location</span>
-                        <span className="text-sm">{post.locationAddress}</span>
-                      </div>
+                {isExchange ? (
+                  <div className="flex items-start gap-3 text-muted-foreground py-3">
+                    <MapPin className="h-4 w-4 mt-0.5 text-green-500" />
+                    <div>
+                      <span className="block text-foreground">Listing Location</span>
+                      <span className="text-sm">
+                        {[(post as ExchangeListing).locationCity, (post as ExchangeListing).locationState].filter(Boolean).join(", ")}
+                      </span>
                     </div>
-                    {post.location && (
-                      <a
-                        href={getGoogleMapsLink(post.location) || "#"}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline flex items-center gap-1 text-sm cursor-pointer"
-                      >
-                        <ExternalLink className="h-3 w-3" />
-                        Map
-                      </a>
-                    )}
                   </div>
-                )}
-                {post.userLocationAddress && (
-                  <div className="flex items-start justify-between py-3 border-b border-border/30 last:border-0">
-                    <div className="flex items-start gap-3 text-muted-foreground">
-                      <User className="h-4 w-4 mt-0.5 text-blue-500" />
-                      <div>
-                        <span className="block text-foreground">User Location</span>
-                        <span className="text-sm">{post.userLocationAddress}</span>
+                ) : (
+                  <>
+                    {(post as Post).locationAddress && (
+                      <div className="flex items-start justify-between py-3 border-b border-border/30 last:border-0">
+                        <div className="flex items-start gap-3 text-muted-foreground">
+                          <MapPin className="h-4 w-4 mt-0.5 text-green-500" />
+                          <div>
+                            <span className="block text-foreground">Post Location</span>
+                            <span className="text-sm">{(post as Post).locationAddress}</span>
+                          </div>
+                        </div>
+                        {(post as Post).location && (
+                          <a
+                            href={getGoogleMapsLink((post as Post).location) || "#"}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline flex items-center gap-1 text-sm cursor-pointer"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                            Map
+                          </a>
+                        )}
                       </div>
-                    </div>
-                    {post.userLocation && (
-                      <a
-                        href={getGoogleMapsLink(post.userLocation) || "#"}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline flex items-center gap-1 text-sm cursor-pointer"
-                      >
-                        <ExternalLink className="h-3 w-3" />
-                        Map
-                      </a>
                     )}
-                  </div>
+                    {(post as Post).userLocationAddress && (
+                      <div className="flex items-start justify-between py-3 border-b border-border/30 last:border-0">
+                        <div className="flex items-start gap-3 text-muted-foreground">
+                          <User className="h-4 w-4 mt-0.5 text-blue-500" />
+                          <div>
+                            <span className="block text-foreground">User Location</span>
+                            <span className="text-sm">{(post as Post).userLocationAddress}</span>
+                          </div>
+                        </div>
+                        {(post as Post).userLocation && (
+                          <a
+                            href={getGoogleMapsLink((post as Post).userLocation) || "#"}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline flex items-center gap-1 text-sm cursor-pointer"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                            Map
+                          </a>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
               </CardContent>
             </Card>
           )}
 
-          {/* Event Date (if exists) */}
-          {post.eventDate && (
+          {/* Event Date (if exists - posts only) */}
+          {!isExchange && (post as Post).eventDate && (
             <Card className="bg-card/50 border-border/50">
               <CardHeader>
                 <CardTitle className="text-lg">Event</CardTitle>
@@ -452,7 +584,7 @@ export default function PostDetailPage() {
                   <Clock className="h-4 w-4 text-orange-500" />
                   <div>
                     <span className="block text-foreground font-medium">Event Date</span>
-                    <span className="text-sm">{formatEventDate(post.eventDate)}</span>
+                    <span className="text-sm">{formatEventDate((post as Post).eventDate)}</span>
                   </div>
                 </div>
               </CardContent>
@@ -511,6 +643,36 @@ export default function PostDetailPage() {
               }
             >
               {post.isBlacklisted ? "Unblock" : "Block"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialog} onOpenChange={setDeleteDialog}>
+        <AlertDialogContent className="bg-card border-border">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete this {isExchange ? "exchange listing" : "post"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete &quot;{post.title || "Untitled"}&quot;. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="bg-secondary/50 border-border/50">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              {actionLoading ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-2" />
+              )}
+              Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

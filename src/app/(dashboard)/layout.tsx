@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
+import { GoogleMapsProvider } from "@/components/ui/location-picker";
 import {
   Loader2,
   Shield,
@@ -15,15 +16,27 @@ import {
   FileText,
   MessageSquare,
   Megaphone,
+  FolderTree,
+  TrendingUp,
+  CreditCard,
+  Menu,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+
+// Google Maps API Key - set in environment variable
+const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/users", label: "Users", icon: Users },
+  { href: "/subscriptions", label: "Subscriptions", icon: CreditCard },
   { href: "/posts", label: "Posts", icon: FileText },
-  { href: "/ads", label: "Ads", icon: Megaphone },
+  { href: "/ads/admin", label: "Admin Ads", icon: Shield },
+  { href: "/ads/user", label: "User Ads", icon: Megaphone },
+  { href: "/conversions", label: "Conversions", icon: TrendingUp },
   { href: "/appeals", label: "Appeals", icon: MessageSquare },
+  { href: "/categories", label: "Categories", icon: FolderTree },
 ];
 
 export default function DashboardLayout({
@@ -35,6 +48,7 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const { admin, loading, logout } = useAuth();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!loading && !admin) {
@@ -49,11 +63,24 @@ export default function DashboardLayout({
     }
   }, []);
 
+  // Close mobile menu on route change
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
+
+  // Lock body scroll when mobile menu is open
+  useEffect(() => {
+    document.body.style.overflow = mobileMenuOpen ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [mobileMenuOpen]);
+
   const toggleSidebar = () => {
     const newState = !sidebarCollapsed;
     setSidebarCollapsed(newState);
     localStorage.setItem("sidebar-collapsed", String(newState));
   };
+
+  const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), []);
 
   const handleLogout = async () => {
     await logout();
@@ -78,19 +105,30 @@ export default function DashboardLayout({
   }
 
   return (
+    <GoogleMapsProvider apiKey={GOOGLE_MAPS_API_KEY}>
     <div className="min-h-screen bg-background">
       {/* Fixed Header */}
       <header className="fixed top-0 left-0 right-0 z-50 h-16 border-b border-border/50 bg-card/95 backdrop-blur-xl">
         <div className="h-full px-4 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-3 cursor-pointer">
-            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-md shadow-primary/20">
-              <Shield className="w-5 h-5 text-primary-foreground" />
-            </div>
-            <div className="hidden sm:block">
-              <h1 className="font-semibold text-foreground">Qollaby Admin</h1>
-              <p className="text-xs text-muted-foreground">Control Center</p>
-            </div>
-          </Link>
+          <div className="flex items-center gap-2">
+            {/* Mobile hamburger */}
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="md:hidden p-2 -ml-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+            >
+              {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
+
+            <Link href="/" className="flex items-center gap-3 cursor-pointer">
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-md shadow-primary/20">
+                <Shield className="w-5 h-5 text-primary-foreground" />
+              </div>
+              <div className="hidden sm:block">
+                <h1 className="font-semibold text-foreground">Qollaby Admin</h1>
+                <p className="text-xs text-muted-foreground">Control Center</p>
+              </div>
+            </Link>
+          </div>
 
           <div className="flex items-center gap-4">
             <div className="text-right hidden sm:block">
@@ -173,6 +211,82 @@ export default function DashboardLayout({
         </button>
       </aside>
 
+      {/* Mobile sidebar overlay + drawer */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-50 md:hidden">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={closeMobileMenu}
+          />
+          {/* Drawer */}
+          <aside className="absolute top-0 left-0 bottom-0 w-72 bg-card border-r border-border/50 flex flex-col animate-in slide-in-from-left duration-200">
+            {/* Drawer header */}
+            <div className="h-16 px-4 flex items-center justify-between border-b border-border/50">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-md shadow-primary/20">
+                  <Shield className="w-5 h-5 text-primary-foreground" />
+                </div>
+                <div>
+                  <h1 className="font-semibold text-foreground text-sm">Qollaby Admin</h1>
+                  <p className="text-xs text-muted-foreground">Control Center</p>
+                </div>
+              </div>
+              <button
+                onClick={closeMobileMenu}
+                className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Nav items */}
+            <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const active = isActive(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`
+                      flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer
+                      ${
+                        active
+                          ? "bg-primary/10 text-primary border border-primary/20"
+                          : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+                      }
+                    `}
+                  >
+                    <Icon className="h-4 w-4 flex-shrink-0" />
+                    <span>{item.label}</span>
+                  </Link>
+                );
+              })}
+            </nav>
+
+            {/* User info + logout */}
+            <div className="p-3 border-t border-border/50 space-y-3">
+              <div className="px-3">
+                <p className="text-sm font-medium text-foreground truncate">
+                  {admin.profile.firstName} {admin.profile.lastName}
+                </p>
+                <p className="text-xs text-muted-foreground truncate">{admin.user.email}</p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleLogout}
+                className="w-full bg-secondary/50 border-border/50 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-colors"
+              >
+                <LogOut className="h-4 w-4 mr-2" />
+                Logout
+              </Button>
+            </div>
+          </aside>
+        </div>
+      )}
+
       {/* Main content area */}
       <main
         className={`
@@ -184,5 +298,6 @@ export default function DashboardLayout({
         <div className="p-6">{children}</div>
       </main>
     </div>
+    </GoogleMapsProvider>
   );
 }

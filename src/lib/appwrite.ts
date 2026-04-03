@@ -1,4 +1,4 @@
-import { Account, Client, Databases, Query, Storage } from "appwrite";
+import { Account, Client, Databases, ID, Query, Storage } from "appwrite";
 
 // Appwrite configuration - shared with mobile app
 const client = new Client()
@@ -11,6 +11,33 @@ export const storage = new Storage(client);
 
 // Bucket ID for post images (adjust if different)
 export const BUCKET_ID = process.env.NEXT_PUBLIC_APPWRITE_BUCKET_ID || "posts";
+
+// Sponsor Ads Bucket ID (same as app)
+export const SPONSOR_ADS_BUCKET_ID = "68be1b43002b9e939b2e";
+
+/**
+ * Upload files directly to Appwrite Storage from the browser.
+ * Bypasses the Vercel API route to avoid its 4.5 MB request body limit.
+ */
+export async function uploadFiles(files: File[]): Promise<string[]> {
+  const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT!;
+  const projectId = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID!;
+  const urls: string[] = [];
+
+  for (const file of files) {
+    const uploaded = await storage.createFile(
+      SPONSOR_ADS_BUCKET_ID,
+      ID.unique(),
+      file
+    );
+
+    const isVideo = file.type.startsWith("video/");
+    const baseUrl = `${endpoint}/storage/buckets/${SPONSOR_ADS_BUCKET_ID}/files/${uploaded.$id}/view?project=${projectId}`;
+    urls.push(isVideo ? `${baseUrl}&type=video` : baseUrl);
+  }
+
+  return urls;
+}
 
 /**
  * Check if the URL represents a video file
@@ -91,7 +118,7 @@ export const Collections = {
   POSTS: "posts",
   POST_LIKES: "post_likes",
   POST_STAMPS: "post_stamps",
-  FOLLOWS: "follows",
+  LINKS: "follows",
   PLANS: "plans",
   SUBSCRIPTIONS: "subscriptions",
   SUBSCRIPTION_LOGS: "subscription_logs",
@@ -105,6 +132,9 @@ export const Collections = {
   SPONSOR_ADS: "sponsor_ads",
   AD_LIKES: "ad_likes",
   PUSH_TOKENS: "push_tokens",
+  CATEGORIES: "category",
+  LOCATIONS: "locations",
+  EXCHANGE_LISTINGS: "exchange_listings",
 } as const;
 
 export { Query };

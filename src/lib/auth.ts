@@ -98,13 +98,15 @@ export async function loginWithEmail(email: string, password: string): Promise<A
 }
 
 /**
- * Start Google OAuth flow
+ * Start Google OAuth flow using token-based approach.
+ * Uses createOAuth2Token instead of createOAuth2Session to support
+ * mobile browsers where third-party cookies are blocked (Safari ITP).
  */
 export function loginWithGoogle(): void {
   const successUrl = `${window.location.origin}/auth/callback`;
   const failureUrl = `${window.location.origin}/login?error=oauth_failed`;
   
-  account.createOAuth2Session(
+  account.createOAuth2Token(
     OAuthProvider.Google,
     successUrl,
     failureUrl
@@ -112,27 +114,36 @@ export function loginWithGoogle(): void {
 }
 
 /**
- * Handle OAuth callback - verify user is admin
+ * Handle OAuth callback - extract token from URL params and create session.
+ * createOAuth2Token redirects back with ?userId=xxx&secret=xxx in the URL.
  */
 export async function handleOAuthCallback(): Promise<AdminUser> {
+  const params = new URLSearchParams(window.location.search);
+  const userId = params.get("userId");
+  const secret = params.get("secret");
+
+  if (userId && secret) {
+    await account.createSession(userId, secret);
+  }
+
   const user = await getCurrentUser();
   
   if (!user) {
     throw new Error("Authentication failed");
   }
-  
+
   const profile = await getProfileByUserId(user.$id);
   
   if (!profile) {
     await logout();
     throw new Error("User profile not found");
   }
-  
+
   if (!isAdmin(profile)) {
     await logout();
     throw new Error("You don't have admin privileges");
   }
-  
+
   return { user, profile };
 }
 
