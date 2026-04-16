@@ -13,15 +13,13 @@ import { calculateDistance, formatDistance, RadiusOption } from "@/lib/geo-utils
 import {
   getPosts,
   getExchangeListings,
-  getPostsLikeCounts,
-  getPostsReportCounts,
-  getPostsStampCounts,
   getPostStats,
   Post,
   ExchangeListing,
   PostListResult,
   ExchangeListingListResult,
 } from "@/lib/user-actions";
+import { fetchPostStatsApi } from "@/lib/post-stats-client";
 import { getStates, getLocationsByState, Location } from "@/lib/location-actions";
 import { getCategories, getSubcategories, Category } from "@/lib/category-actions";
 import { getStateFullName } from "@/lib/utils";
@@ -164,26 +162,25 @@ export default function PostsPage() {
         totalPagesCount = result.totalPages;
       }
 
-      // Fetch like, report, and stamp counts for all items (only for posts, not exchange)
+      // Like/stamp/report: App 端 post_likes / post_stamps 的 postId 既是普通帖 id，也是 exchange_listings 的 $id
       const itemIds = itemsData.map((p) => p.$id);
-      let likeCounts = new Map<string, number>();
-      let reportCounts = new Map<string, number>();
-      let stampCounts = new Map<string, number>();
+      let likeCounts: Record<string, number> = {};
+      let reportCounts: Record<string, number> = {};
+      let stampCounts: Record<string, number> = {};
 
-      if (typeFilter !== "exchange" && itemIds.length > 0) {
-        [likeCounts, reportCounts, stampCounts] = await Promise.all([
-          getPostsLikeCounts(itemIds),
-          getPostsReportCounts(itemIds),
-          getPostsStampCounts(itemIds),
-        ]);
+      if (itemIds.length > 0) {
+        const stats = await fetchPostStatsApi({ postIds: itemIds });
+        likeCounts = stats.likes;
+        stampCounts = stats.stamps;
+        reportCounts = stats.reportCounts;
       }
 
       // Merge stats into items
       const itemsWithStats: ItemWithStats[] = itemsData.map((item) => ({
         ...item,
-        computedLikeCount: likeCounts.get(item.$id) || 0,
-        computedReportCount: reportCounts.get(item.$id) || 0,
-        computedStampCount: stampCounts.get(item.$id) || 0,
+        computedLikeCount: likeCounts[item.$id] ?? 0,
+        computedReportCount: reportCounts[item.$id] ?? 0,
+        computedStampCount: stampCounts[item.$id] ?? 0,
       }));
 
       setItems(itemsWithStats);
