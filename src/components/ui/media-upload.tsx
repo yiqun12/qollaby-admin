@@ -33,7 +33,15 @@ interface MediaUploadProps {
   addMoreLabel?: string;
 }
 
-const DEFAULT_ACCEPT = "image/*,video/*";
+const DEFAULT_ACCEPT = ".jpg,.jpeg,.png,.webp,.gif,video/*";
+const SUPPORTED_IMAGE_TYPES = new Set([
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+]);
+const SUPPORTED_IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
 
 export function MediaUpload({
   value,
@@ -63,6 +71,20 @@ export function MediaUpload({
         const file = newFiles[i];
         const isVideo = file.type.startsWith("video/");
         let resolvedFile = file;
+        const lowerName = file.name.toLowerCase();
+        const hasSupportedImageMime = SUPPORTED_IMAGE_TYPES.has(file.type.toLowerCase());
+        const hasSupportedImageExtension = SUPPORTED_IMAGE_EXTENSIONS.some((ext) =>
+          lowerName.endsWith(ext)
+        );
+        const isUnsupportedImage =
+          !isVideo && !(hasSupportedImageMime || hasSupportedImageExtension);
+
+        if (isUnsupportedImage) {
+          revokePreviews(newPreviews);
+          throw new Error(
+            `Image "${file.name}" is not a supported format. Please use JPG, JPEG, PNG, WEBP, or GIF.`
+          );
+        }
 
         if (isVideo && file.size > maxVideoSizeBytes) {
           revokePreviews(newPreviews);
@@ -72,12 +94,17 @@ export function MediaUpload({
         }
 
         if (isVideo) {
-          if (isMp4File(file)) {
-            resolvedFile = file;
-          } else {
+          try {
+            // Always run video uploads through an H.264/AAC MP4 transcode path.
+            // Some source files arrive as HEVC/H.265 inside an .mp4 container,
+            // which remote Appwrite playback has proven unreliable for.
+            resolvedFile = await compressVideo(file);
+          } catch (compressErr) {
+            console.warn("[MediaUpload] Video compression failed, trying remux fallback:", compressErr);
             try {
-              resolvedFile = await remuxToMp4(file);
-            } catch {
+              resolvedFile = isMp4File(file) ? file : await remuxToMp4(file);
+            } catch (remuxErr) {
+              console.warn("[MediaUpload] Video remux fallback failed, using original file:", remuxErr);
               resolvedFile = file;
             }
           }
