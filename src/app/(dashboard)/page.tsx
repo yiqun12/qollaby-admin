@@ -33,7 +33,9 @@ import {
   Check,
   RefreshCw,
   LayoutDashboard,
+  UserPlus,
 } from "lucide-react";
+import { AddUserDialog } from "@/components/users/add-user-dialog";
 
 // Date selectors
 const currentYear = new Date().getFullYear();
@@ -154,6 +156,7 @@ export default function DashboardPage() {
   const { admin } = useAuth();
   const [stats, setStats] = useState({ totalUsers: 0, totalAdmins: 0, recentUsers: 0 });
   const [loading, setLoading] = useState(true);
+  const [addUserOpen, setAddUserOpen] = useState(false);
 
   // Active Users states
   const [selectedYear, setSelectedYear] = useState(currentYear);
@@ -170,19 +173,20 @@ export default function DashboardPage() {
   const isViewingCurrentMonth =
     selectedYear === today.getFullYear() && selectedMonth === today.getMonth() + 1;
 
-  useEffect(() => {
-    async function fetchStats() {
-      try {
-        const data = await getUserStats();
-        setStats(data);
-      } catch (error) {
-        console.error("Failed to fetch stats:", error);
-      } finally {
-        setLoading(false);
-      }
+  const fetchStats = useCallback(async () => {
+    try {
+      const data = await getUserStats();
+      setStats(data);
+    } catch (error) {
+      console.error("Failed to fetch stats:", error);
+    } finally {
+      setLoading(false);
     }
-    fetchStats();
   }, []);
+
+  useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
 
   const fetchRegStats = useCallback(async () => {
     setStatsLoading(true);
@@ -266,9 +270,22 @@ export default function DashboardPage() {
           <>
             <Card className="bg-card/50 border-border/50 hover:border-primary/30 transition-colors">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Total Users
-                </CardTitle>
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Total Users
+                  </CardTitle>
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="outline"
+                    onClick={() => setAddUserOpen(true)}
+                    className="border-primary/40 text-primary hover:bg-primary/10 hover:text-primary"
+                    aria-label="Add new user"
+                    title="Add new user"
+                  >
+                    <UserPlus className="h-4 w-4" />
+                  </Button>
+                </div>
                 <Users className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
@@ -701,6 +718,15 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      <AddUserDialog
+        open={addUserOpen}
+        onOpenChange={setAddUserOpen}
+        onCreated={() => {
+          fetchStats();
+          fetchRegStats();
+        }}
+      />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminDatabases } from "@/lib/appwrite-server";
+import { getAdminDatabases } from "@/lib/appwrite-server";
 import { Collections } from "@/lib/appwrite";
 
 export async function DELETE(
@@ -16,7 +16,7 @@ export async function DELETE(
       );
     }
 
-    await adminDatabases.deleteDocument(
+    await getAdminDatabases().deleteDocument(
       process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!,
       Collections.PROFILE,
       profileId

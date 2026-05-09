@@ -1,9 +1,10 @@
 import { Models } from "appwrite";
 
-export type UserRole = "user" | "admin";
+export type UserRole = "user" | "admin" | "unlimited";
 
 type ProfileBase = {
   userId: string;
+  username?: string;
   firstName: string;
   lastName: string;
   email: string;

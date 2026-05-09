@@ -1,0 +1,34 @@
+{
+  "mcpServers": {
+    "my-mcp-1": {
+      "command": "node",
+      "args": [
+        "/Users/yiqun/.cursor/extensions/lingxi.lingxi-mcp-1.0.16/dist/server.mjs"
+      ],
+      "env": {
+        "XIAOYEZI_SESSION": "1",
+        "XIAOYEZI_WORKSPACE": "f2a344c38ba9"
+      }
+    },
+    "my-mcp-2": {
+      "command": "node",
+      "args": [
+        "/Users/yiqun/.cursor/extensions/lingxi.lingxi-mcp-1.0.16/dist/server.mjs"
+      ],
+      "env": {
+        "XIAOYEZI_SESSION": "2",
+        "XIAOYEZI_WORKSPACE": "f2a344c38ba9"
+      }
+    },
+    "my-mcp-3": {
+      "command": "node",
+      "args": [
+        "/Users/yiqun/.cursor/extensions/lingxi.lingxi-mcp-1.0.16/dist/server.mjs"
+      ],
+      "env": {
+        "XIAOYEZI_SESSION": "3",
+        "XIAOYEZI_WORKSPACE": "f2a344c38ba9"
+      }
+    }
+  }
+}

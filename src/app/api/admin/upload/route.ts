@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ID } from "node-appwrite";
 import { InputFile } from "node-appwrite/file";
-import { adminStorage } from "@/lib/appwrite-server";
+import { getAdminStorage } from "@/lib/appwrite-server";
 import { SPONSOR_ADS_BUCKET_ID } from "@/lib/appwrite";
 
 export async function POST(request: NextRequest) {
@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
       const arrayBuffer = await file.arrayBuffer();
       const inputFile = InputFile.fromBuffer(Buffer.from(arrayBuffer), file.name);
 
-      const uploaded = await adminStorage.createFile(
+      const uploaded = await getAdminStorage().createFile(
         SPONSOR_ADS_BUCKET_ID,
         ID.unique(),
         inputFile

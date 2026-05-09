@@ -16,16 +16,13 @@ import { MediaCarousel } from "@/components/ui/media-carousel";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getImageUrl, getVideoUrl, isVideoUrl } from "@/lib/appwrite";
 import { getAllCategories, getCategoryLabel, getSubCategoryLabel, Category } from "@/lib/category-actions";
+import { fetchPostStatsApi } from "@/lib/post-stats-client";
 import {
   blacklistPost,
   deletePost,
   deleteExchangeListing,
   getPostById,
   getExchangeListingById,
-  getPostLikeCount,
-  getPostReportCount,
-  getPostReports,
-  getPostStampCount,
   getUserByUserId,
   Post,
   ExchangeListing,
@@ -83,22 +80,18 @@ export default function PostDetailPage() {
     try {
       let postData: Post | ExchangeListing | null;
 
-      if (isExchange) {
-        postData = await getExchangeListingById(postId);
-      } else {
-        const [data, likes, reportCnt, stamps, reportsList] = await Promise.all([
-          getPostById(postId),
-          getPostLikeCount(postId),
-          getPostReportCount(postId),
-          getPostStampCount(postId),
-          getPostReports(postId),
-        ]);
-        postData = data;
-        setLikeCount(likes);
-        setReportCount(reportCnt);
-        setStampCount(stamps);
-        setReports(reportsList);
-      }
+      const [data, stats] = await Promise.all([
+        isExchange ? getExchangeListingById(postId) : getPostById(postId),
+        fetchPostStatsApi({
+          postIds: [postId],
+          includeReportsForPostId: postId,
+        }),
+      ]);
+      postData = data;
+      setLikeCount(stats.likes[postId] ?? 0);
+      setReportCount(stats.reportCounts[postId] ?? 0);
+      setStampCount(stats.stamps[postId] ?? 0);
+      setReports(stats.reports ?? []);
 
       setPost(postData);
       
@@ -422,8 +415,7 @@ export default function PostDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Statistics (posts only) */}
-          {!isExchange && (
+          {/* Statistics — post 与 exchange 共用 post_likes / post_stamps 的 postId */}
           <Card className="bg-card/50 border-border/50">
             <CardHeader>
               <CardTitle className="text-lg">Statistics</CardTitle>
@@ -450,10 +442,9 @@ export default function PostDetailPage() {
               />
             </CardContent>
           </Card>
-          )}
 
-          {/* Reports Section - Collapsible (posts only) */}
-          {!isExchange && reports.length > 0 && (
+          {/* Reports Section - Collapsible */}
+          {reports.length > 0 && (
             <Card className="bg-card/50 border-red-500/30 border">
               <CardHeader 
                 className="cursor-pointer select-none"
