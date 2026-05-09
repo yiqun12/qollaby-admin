@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { getUserById, updateUserRole, deleteUserProfile, getUserSubscriptionInfo, getUserContentStats } from "@/lib/user-actions";
+import { getUserById, updateUserRole, deleteUserProfile, getUserSubscriptionInfo, getUserContentStats, getAdminBusinessProfileByUserId, type AdminBusinessProfileInfo } from "@/lib/user-actions";
 import { Profile, UserRole, UserSubscriptionInfo, UserContentStats } from "@/types/profile.types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,7 +37,19 @@ import {
   CreditCard,
   FileText,
   Megaphone,
+  Sparkles,
+  ExternalLink,
 } from "lucide-react";
+import { SOCIAL_LINK_KEYS } from "@/lib/social-links";
+
+const SOCIAL_LINK_LABELS: Record<(typeof SOCIAL_LINK_KEYS)[number], string> = {
+  website: "Website",
+  facebook: "Facebook",
+  instagram: "Instagram",
+  youtube: "YouTube",
+  twitter: "X (Twitter)",
+  tiktok: "TikTok",
+};
 
 export default function UserDetailPage() {
   const params = useParams();
@@ -48,6 +60,7 @@ export default function UserDetailPage() {
   const [user, setUser] = useState<Profile | null>(null);
   const [subscriptionInfo, setSubscriptionInfo] = useState<UserSubscriptionInfo | null>(null);
   const [contentStats, setContentStats] = useState<UserContentStats | null>(null);
+  const [bizProfile, setBizProfile] = useState<AdminBusinessProfileInfo | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState(false);
 
@@ -56,15 +69,19 @@ export default function UserDetailPage() {
     try {
       const userData = await getUserById(userId);
       setUser(userData);
-      
-      // Fetch subscription info and content stats in parallel
+      setBizProfile(null);
+
       if (userData) {
-        const [subInfo, stats] = await Promise.all([
+        const [subInfo, stats, bp] = await Promise.all([
           getUserSubscriptionInfo(userData.userId),
           getUserContentStats(userData.userId),
+          userData.hasBusinessProfile
+            ? getAdminBusinessProfileByUserId(userData.userId)
+            : Promise.resolve(null),
         ]);
         setSubscriptionInfo(subInfo);
         setContentStats(stats);
+        setBizProfile(bp);
       }
     } catch (error) {
       console.error("Failed to fetch user:", error);
@@ -82,6 +99,20 @@ export default function UserDetailPage() {
   const handleToggleAdmin = async () => {
     if (!user) return;
     const newRole: UserRole = user.role === "admin" ? "user" : "admin";
+    setActionLoading(true);
+    try {
+      await updateUserRole(user.$id, newRole);
+      await fetchUser();
+    } catch (error) {
+      console.error("Failed to update role:", error);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleToggleUnlimited = async () => {
+    if (!user) return;
+    const newRole: UserRole = user.role === "unlimited" ? "user" : "unlimited";
     setActionLoading(true);
     try {
       await updateUserRole(user.$id, newRole);
@@ -178,6 +209,19 @@ export default function UserDetailPage() {
         <div className="flex gap-2">
           <Button
             variant="outline"
+            onClick={handleToggleUnlimited}
+            disabled={actionLoading}
+            className="bg-secondary/50 border-border/50"
+          >
+            {actionLoading ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4 mr-2" />
+            )}
+            {user.role === "unlimited" ? "Remove Unlimited" : "Make Unlimited"}
+          </Button>
+          <Button
+            variant="outline"
             onClick={handleToggleAdmin}
             disabled={actionLoading}
             className="bg-secondary/50 border-border/50"
@@ -223,6 +267,11 @@ export default function UserDetailPage() {
                   <Badge className="bg-primary/10 text-primary border-primary/20">
                     <Shield className="h-3 w-3 mr-1" />
                     Admin
+                  </Badge>
+                ) : user.role === "unlimited" ? (
+                  <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/20">
+                    <Sparkles className="h-3 w-3 mr-1" />
+                    Unlimited
                   </Badge>
                 ) : (
                   <Badge variant="outline" className="border-border/50 text-muted-foreground">
@@ -270,8 +319,16 @@ export default function UserDetailPage() {
                   <InfoRow
                     icon={Shield}
                     label="Role"
-                    value={user.role === "admin" ? "Admin" : user.role ? "User" : "User (default)"}
-                    highlight={user.role === "admin"}
+                    value={
+                      user.role === "admin"
+                        ? "Admin"
+                        : user.role === "unlimited"
+                          ? "Unlimited"
+                          : user.role
+                            ? "User"
+                            : "User (default)"
+                    }
+                    highlight={user.role === "admin" || user.role === "unlimited"}
                   />
                   <InfoRow
                     icon={Briefcase}
@@ -294,6 +351,76 @@ export default function UserDetailPage() {
                   />
                 </CardContent>
               </Card>
+
+              {bizProfile && user.hasBusinessProfile && (
+                <Card className="bg-card/50 border-border/50 mt-4">
+                  <CardHeader>
+                    <CardTitle className="text-lg">Business profile (Appwrite)</CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                      Public links from <code className="text-xs">socialLinks</code> (JSON text) and{" "}
+                      <code className="text-xs">storeFront</code>.
+                    </p>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {bizProfile.businessName && (
+                      <InfoRow icon={Briefcase} label="Business name" value={bizProfile.businessName} />
+                    )}
+                    {bizProfile.phone && (
+                      <InfoRow icon={Phone} label="Business phone" value={bizProfile.phone} />
+                    )}
+                    {bizProfile.storeFront?.trim() && (
+                      <div className="flex gap-3 text-sm">
+                        <span className="text-muted-foreground shrink-0 w-36 flex items-center gap-1.5">
+                          <ExternalLink className="h-4 w-4" />
+                          Store front
+                        </span>
+                        <a
+                          href={
+                            bizProfile.storeFront.startsWith("http")
+                              ? bizProfile.storeFront
+                              : `https://${bizProfile.storeFront}`
+                          }
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline break-all"
+                        >
+                          {bizProfile.storeFront}
+                        </a>
+                      </div>
+                    )}
+                    <div className="space-y-2 pt-2 mt-2 border-t border-border/40">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                        Website &amp; social (socialLinks)
+                      </p>
+                      {SOCIAL_LINK_KEYS.map((key) => {
+                        const url = bizProfile.socialLinks[key];
+                        if (!url?.trim()) return null;
+                        const href = url.startsWith("http") ? url : `https://${url}`;
+                        return (
+                          <div key={key} className="flex gap-3 text-sm">
+                            <span className="text-muted-foreground shrink-0 w-36">
+                              {SOCIAL_LINK_LABELS[key]}
+                            </span>
+                            <a
+                              href={href}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-primary hover:underline break-all min-w-0"
+                            >
+                              {url}
+                            </a>
+                          </div>
+                        );
+                      })}
+                      {SOCIAL_LINK_KEYS.every((k) => !bizProfile.socialLinks[k]?.trim()) && (
+                        <p className="text-sm text-muted-foreground">
+                          No website or social URLs in <code className="text-xs">socialLinks</code> yet.
+                        </p>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </TabsContent>
 
             <TabsContent value="meta">

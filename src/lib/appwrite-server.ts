@@ -22,6 +22,11 @@ function getClient(): Client {
   return client;
 }
 
+/** Raw admin Client (APPWRITE_API_KEY) for instantiating SDK services not exported here. */
+export function getAdminClient(): Client {
+  return getClient();
+}
+
 let databases: Databases | null = null;
 
 /** Appwrite Databases client using APPWRITE_API_KEY (bypasses user document ACL for admin reads). */

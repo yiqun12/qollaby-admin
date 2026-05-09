@@ -75,6 +75,7 @@ import {
   Building2,
   FolderTree,
   Briefcase,
+  Sparkles,
 } from "lucide-react";
 
 export default function UsersPage() {
@@ -365,7 +366,13 @@ export default function UsersPage() {
                     variant="outline" 
                     className="w-full justify-between bg-input/50 border-border/50"
                   >
-                    {roleFilter === "all" ? "All Roles" : roleFilter === "admin" ? "Admin" : "User"}
+                    {roleFilter === "all"
+                      ? "All Roles"
+                      : roleFilter === "admin"
+                        ? "Admin"
+                        : roleFilter === "unlimited"
+                          ? "Unlimited"
+                          : "User"}
                     <ChevronDown className="h-4 w-4 opacity-50" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -381,6 +388,10 @@ export default function UsersPage() {
                   <DropdownMenuItem onClick={() => setRoleFilter("user")} className="cursor-pointer">
                     {roleFilter === "user" && <Check className="h-4 w-4 mr-2" />}
                     <span className={roleFilter !== "user" ? "ml-6" : ""}>User</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setRoleFilter("unlimited")} className="cursor-pointer">
+                    {roleFilter === "unlimited" && <Check className="h-4 w-4 mr-2" />}
+                    <span className={roleFilter !== "unlimited" ? "ml-6" : ""}>Unlimited</span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -544,7 +555,7 @@ export default function UsersPage() {
               )}
               {roleFilter !== "all" && (
                 <FilterBadge onRemove={() => setRoleFilter("all")}>
-                  Role: {roleFilter === "admin" ? "Admin" : "User"}
+                  Role: {roleFilter === "admin" ? "Admin" : roleFilter === "unlimited" ? "Unlimited" : "User"}
                 </FilterBadge>
               )}
               {subscriptionFilter !== "all" && (
@@ -672,6 +683,11 @@ export default function UsersPage() {
                         <Badge className="bg-primary/10 text-primary border-primary/20 hover:bg-primary/20">
                           <Shield className="h-3 w-3 mr-1" />
                           Admin
+                        </Badge>
+                      ) : user.role === "unlimited" ? (
+                        <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/20 hover:bg-amber-500/20">
+                          <Sparkles className="h-3 w-3 mr-1" />
+                          Unlimited
                         </Badge>
                       ) : (
                         <Badge variant="outline" className="border-border/50 text-muted-foreground">

@@ -1,4 +1,5 @@
 import { Profile, UserContentStats, UserRole, UserSubscriptionInfo } from "@/types/profile.types";
+import { mergeSocialLinksFromDoc, type SocialLinksPayload } from "@/lib/social-links";
 import { Collections, databases, Query } from "./appwrite";
 import { ID } from "appwrite";
 
@@ -274,6 +275,16 @@ export interface BusinessProfile {
   locationAddress?: string;
   category?: string;
   subCategory?: string;
+  /** Text JSON or object — merged social URLs */
+  socialLinks?: string | Record<string, string>;
+  storeFront?: string;
+  /** Legacy columns (until removed in Appwrite) */
+  website?: string;
+  facebook?: string;
+  instagram?: string;
+  youtube?: string;
+  twitter?: string;
+  tiktok?: string;
   $createdAt: string;
   $updatedAt: string;
 }
@@ -417,6 +428,41 @@ export async function getUsersBusinessProfiles(
   }
 }
 
+export type AdminBusinessProfileInfo = {
+  documentId: string;
+  businessName?: string;
+  phone?: string;
+  storeFront?: string;
+  socialLinks: SocialLinksPayload;
+};
+
+/**
+ * Business profile public links + store (for admin user detail UI).
+ */
+export async function getAdminBusinessProfileByUserId(
+  userId: string
+): Promise<AdminBusinessProfileInfo | null> {
+  try {
+    const res = await databases.listDocuments(
+      process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!,
+      Collections.BUSINESS_PROFILE,
+      [Query.equal("userId", userId), Query.limit(1)]
+    );
+    if (res.documents.length === 0) return null;
+    const doc = res.documents[0] as unknown as Record<string, unknown>;
+    return {
+      documentId: String(doc.$id ?? ""),
+      businessName: doc.businessName as string | undefined,
+      phone: doc.phone as string | undefined,
+      storeFront: (doc.storeFront as string | undefined) || undefined,
+      socialLinks: mergeSocialLinksFromDoc(doc),
+    };
+  } catch (error) {
+    console.error("Error fetching admin business profile:", error);
+    return null;
+  }
+}
+
 /**
  * Update user role (set/remove admin)
  */
@@ -447,6 +493,38 @@ export async function deleteUserProfile(profileId: string): Promise<void> {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || "Failed to delete user profile");
   }
+}
+
+/**
+ * Input for creating a new user via the admin API.
+ * `services` is currently UI-only metadata; not persisted to the schema.
+ */
+export interface CreateUserInput {
+  username: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
+  role: UserRole;
+  avatar?: string;
+  services?: string[];
+}
+
+/**
+ * Create a new user (auth account + profile document) via server-side API route.
+ */
+export async function createUser(input: CreateUserInput): Promise<Profile> {
+  const res = await fetch(`/api/admin/users`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || "Failed to create user");
+  }
+  return data.profile as Profile;
 }
 
 /**
