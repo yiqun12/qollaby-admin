@@ -20,6 +20,7 @@ import { getAllCategories, getCategoryLabel, Category } from "@/lib/category-act
 import { getStateFullName } from "@/lib/utils";
 import { Profile, UserRole, UserSubscriptionInfo } from "@/types/profile.types";
 import { PageHeader } from "@/components/ui/page-header";
+import { AddUserDialog } from "@/components/users/add-user-dialog";
 import LocationPicker, { PlaceValue } from "@/components/ui/location-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -106,6 +107,7 @@ export default function UsersPage() {
     open: false,
     user: null,
   });
+  const [addUserOpen, setAddUserOpen] = useState(false);
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -282,18 +284,29 @@ export default function UsersPage() {
         description="Manage all registered users and admin privileges"
         icon={Users}
         children={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              fetchUsers();
-              fetchStats();
-            }}
-            className="w-fit"
-          >
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setAddUserOpen(true)}
+              className="w-fit border-primary/50 text-primary hover:bg-primary/10 hover:text-primary"
+            >
+              Add User
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                fetchUsers();
+                fetchStats();
+              }}
+              className="w-fit"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh
+            </Button>
+          </div>
         }
       />
 
@@ -841,6 +854,15 @@ export default function UsersPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AddUserDialog
+        open={addUserOpen}
+        onOpenChange={setAddUserOpen}
+        onCreated={() => {
+          void fetchUsers();
+          void fetchStats();
+        }}
+      />
     </div>
   );
 }
