@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   getSponsorAds,
-  getSponsorAdStats,
   getSponsorAdsFieldDistribution,
   getAdMetrics,
   getAdsLikeCounts,
@@ -112,7 +111,6 @@ export default function UserAdsPage() {
 
   const [loading, setLoading] = useState(true);
   const [ads, setAds] = useState<AdWithStats[]>([]);
-  const [stats, setStats] = useState({ totalAds: 0, activeAds: 0, pendingAds: 0 });
   const [metrics, setMetrics] = useState({ totalViews: 0, totalClicks: 0, ctr: 0 });
   const [page, setPage] = useState(() => Number(searchParams.get("page")) || 1);
   const [totalPages, setTotalPages] = useState(1);
@@ -144,7 +142,7 @@ export default function UserAdsPage() {
     const t0 = performance.now();
     try {
       const tParallel = performance.now();
-      const [result, statsData, metricsData] = await Promise.all([
+      const [result, metricsData] = await Promise.all([
         getSponsorAds({
           page,
           limit: 20,
@@ -156,10 +154,9 @@ export default function UserAdsPage() {
           subcategory: subcategoryFilter || undefined,
           isAdminCreated: false,
         }),
-        getSponsorAdStats(false),
         getAdMetrics(false),
       ]);
-      console.log(`[ads/user] parallel fetch (ads + stats + metrics): ${(performance.now() - tParallel).toFixed(0)}ms`);
+      console.log(`[ads/user] parallel fetch (ads + metrics): ${(performance.now() - tParallel).toFixed(0)}ms`);
 
       const tLikes = performance.now();
       const adIds = result.ads.map((ad) => ad.$id);
@@ -182,7 +179,6 @@ export default function UserAdsPage() {
       setAds(adsWithStats);
       setTotal(result.total);
       setTotalPages(result.totalPages);
-      setStats(statsData);
       setMetrics(metricsData);
     } catch (error) {
       console.error("Failed to fetch ads:", error);
@@ -320,83 +316,72 @@ export default function UserAdsPage() {
         }
       />
 
-      {/* Stats + category mix */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card className="bg-card/50 border-border/50">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-primary/10">
-                <Megaphone className="h-6 w-6 text-primary" />
+      {/* Stats: left 2×2, right tall pie (same pattern as admin ads) */}
+      <div className="grid gap-4 md:grid-cols-2 md:items-stretch">
+        <div className="grid grid-cols-2 gap-4">
+          <Card className="bg-card/50 border-border/50">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-4">
+                <div className="p-3 rounded-lg bg-primary/10">
+                  <Megaphone className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Total User Ads</p>
+                  <p className="text-2xl font-bold">{total.toLocaleString()}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Total User Ads</p>
-                <p className="text-2xl font-bold">{total}</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-card/50 border-border/50">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-4">
+                <div className="p-3 rounded-lg bg-amber-500/10">
+                  <TrendingUp className="h-6 w-6 text-amber-500" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">CTR</p>
+                  <p className="text-2xl font-bold">{metrics.ctr.toFixed(1)}%</p>
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-card/50 border-border/50">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-green-500/10">
-                <CheckCircle className="h-6 w-6 text-green-500" />
+            </CardContent>
+          </Card>
+          <Card className="bg-card/50 border-border/50">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-4">
+                <div className="p-3 rounded-lg bg-blue-500/10">
+                  <Eye className="h-6 w-6 text-blue-500" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Total Views</p>
+                  <p className="text-2xl font-bold">{metrics.totalViews.toLocaleString()}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Active Ads</p>
-                <p className="text-2xl font-bold">{stats.activeAds}</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-card/50 border-border/50">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-4">
+                <div className="p-3 rounded-lg bg-purple-500/10">
+                  <MousePointer className="h-6 w-6 text-purple-500" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Total Clicks</p>
+                  <p className="text-2xl font-bold">{metrics.totalClicks.toLocaleString()}</p>
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-        <ListDistributionPieChart
-          title="Clicks vs views (recent sample)"
-          rows={viewClickPieRows}
-          totalInDatabase={distribution?.totalInDatabase ?? 0}
-          scannedCount={distribution?.scannedCount ?? 0}
-        />
-      </div>
-
-      {/* Stats Cards - Row 2: Metrics */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card className="bg-card/50 border-border/50">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-blue-500/10">
-                <Eye className="h-6 w-6 text-blue-500" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Total Views</p>
-                <p className="text-2xl font-bold">{metrics.totalViews.toLocaleString()}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-card/50 border-border/50">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-purple-500/10">
-                <MousePointer className="h-6 w-6 text-purple-500" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Total Clicks</p>
-                <p className="text-2xl font-bold">{metrics.totalClicks.toLocaleString()}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-card/50 border-border/50">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-amber-500/10">
-                <TrendingUp className="h-6 w-6 text-amber-500" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">CTR</p>
-                <p className="text-2xl font-bold">{metrics.ctr.toFixed(1)}%</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </div>
+        <div className="min-h-0 flex flex-col h-full md:min-h-[280px]">
+          <ListDistributionPieChart
+            className="h-full min-h-[260px] flex flex-col"
+            contentClassName="flex-1 justify-center"
+            title="Clicks vs views (recent sample)"
+            rows={viewClickPieRows}
+            totalInDatabase={distribution?.totalInDatabase ?? 0}
+            scannedCount={distribution?.scannedCount ?? 0}
+          />
+        </div>
       </div>
 
       {/* Ads List */}

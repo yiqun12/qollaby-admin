@@ -1,6 +1,7 @@
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 export type ListPieRow = { label: string; count: number };
 
@@ -9,6 +10,10 @@ type Props = {
   rows: ListPieRow[];
   totalInDatabase: number;
   scannedCount: number;
+  /** Merged onto the root Card (e.g. `h-full flex flex-col` for a tall sidebar). */
+  className?: string;
+  /** Merged onto CardContent (e.g. `flex-1 justify-center`). */
+  contentClassName?: string;
 };
 
 function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
@@ -46,6 +51,8 @@ export function ListDistributionPieChart({
   rows,
   totalInDatabase,
   scannedCount,
+  className,
+  contentClassName,
 }: Props) {
   const total = rows.reduce((s, r) => s + r.count, 0);
   const safeTotal = total > 0 ? total : 1;
@@ -77,14 +84,16 @@ export function ListDistributionPieChart({
       : "No data";
 
   return (
-    <Card className="bg-card/50 border-border/50">
-      <CardHeader className="pb-2">
+    <Card className={cn("bg-card/50 border-border/50", className)}>
+      <CardHeader className="pb-2 shrink-0">
         <CardTitle className="text-sm font-medium text-muted-foreground">
           {title}
         </CardTitle>
         <p className="text-xs text-muted-foreground/90">{foot}</p>
       </CardHeader>
-      <CardContent className="flex flex-col sm:flex-row items-center gap-6">
+      <CardContent
+        className={cn("flex flex-col sm:flex-row items-center gap-6", contentClassName)}
+      >
         <svg width={160} height={160} viewBox="0 0 160 160" className="shrink-0">
           {slices.map((s, i) => (
             <path

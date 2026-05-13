@@ -2265,6 +2265,12 @@ export interface ConversionRateItem {
  * Conversion rate data by dimension
  */
 export interface ConversionRateData {
+  /** All sponsor ads (admin-created + user): views/clicks/ad count; full collection scan */
+  overall: {
+    totalViews: number;
+    totalClicks: number;
+    totalAds: number;
+  };
   byCategory: ConversionRateItem[];
   bySubcategory: ConversionRateItem[];
   byState: ConversionRateItem[];
@@ -2272,74 +2278,89 @@ export interface ConversionRateData {
 }
 
 /**
- * Get conversion rate data grouped by category, subcategory, state, and city
+ * Get conversion rate data grouped by category, subcategory, state, and city.
+ * Scans the full `sponsor_ads` collection (admin + user ads), same universe as getAdMetrics(undefined).
  */
 export async function getConversionRateData(): Promise<ConversionRateData> {
+  const empty: ConversionRateData = {
+    overall: { totalViews: 0, totalClicks: 0, totalAds: 0 },
+    byCategory: [],
+    bySubcategory: [],
+    byState: [],
+    byCity: [],
+  };
+
   try {
-    // Fetch all sponsor ads (with active status for meaningful data)
-    const res = await databases.listDocuments(
-      process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!,
-      Collections.SPONSOR_ADS,
-      [Query.limit(5000)]
-    );
-
-    const ads = res.documents as unknown as SponsorAd[];
-
-    // Group by category
     const categoryMap = new Map<string, { views: number; clicks: number; count: number }>();
-    // Group by subcategory
     const subcategoryMap = new Map<string, { views: number; clicks: number; count: number }>();
-    // Group by state
     const stateMap = new Map<string, { views: number; clicks: number; count: number }>();
-    // Group by city
     const cityMap = new Map<string, { views: number; clicks: number; count: number }>();
 
-    for (const ad of ads) {
-      const views = ad.views || 0;
-      const clicks = ad.clicks || 0;
+    let overallViews = 0;
+    let overallClicks = 0;
+    let overallAds = 0;
 
-      // Category
-      if (ad.category) {
-        const existing = categoryMap.get(ad.category) || { views: 0, clicks: 0, count: 0 };
-        categoryMap.set(ad.category, {
-          views: existing.views + views,
-          clicks: existing.clicks + clicks,
-          count: existing.count + 1,
-        });
+    const pageSize = 500;
+    let offset = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      const res = await databases.listDocuments(
+        process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!,
+        Collections.SPONSOR_ADS,
+        [Query.limit(pageSize), Query.offset(offset)]
+      );
+
+      for (const doc of res.documents) {
+        const ad = doc as unknown as SponsorAd;
+        const views = ad.views || 0;
+        const clicks = ad.clicks || 0;
+
+        overallViews += views;
+        overallClicks += clicks;
+        overallAds += 1;
+
+        if (ad.category) {
+          const existing = categoryMap.get(ad.category) || { views: 0, clicks: 0, count: 0 };
+          categoryMap.set(ad.category, {
+            views: existing.views + views,
+            clicks: existing.clicks + clicks,
+            count: existing.count + 1,
+          });
+        }
+
+        if (ad.subcategory) {
+          const existing = subcategoryMap.get(ad.subcategory) || { views: 0, clicks: 0, count: 0 };
+          subcategoryMap.set(ad.subcategory, {
+            views: existing.views + views,
+            clicks: existing.clicks + clicks,
+            count: existing.count + 1,
+          });
+        }
+
+        if (ad.state) {
+          const existing = stateMap.get(ad.state) || { views: 0, clicks: 0, count: 0 };
+          stateMap.set(ad.state, {
+            views: existing.views + views,
+            clicks: existing.clicks + clicks,
+            count: existing.count + 1,
+          });
+        }
+
+        if (ad.city) {
+          const existing = cityMap.get(ad.city) || { views: 0, clicks: 0, count: 0 };
+          cityMap.set(ad.city, {
+            views: existing.views + views,
+            clicks: existing.clicks + clicks,
+            count: existing.count + 1,
+          });
+        }
       }
 
-      // Subcategory
-      if (ad.subcategory) {
-        const existing = subcategoryMap.get(ad.subcategory) || { views: 0, clicks: 0, count: 0 };
-        subcategoryMap.set(ad.subcategory, {
-          views: existing.views + views,
-          clicks: existing.clicks + clicks,
-          count: existing.count + 1,
-        });
-      }
-
-      // State
-      if (ad.state) {
-        const existing = stateMap.get(ad.state) || { views: 0, clicks: 0, count: 0 };
-        stateMap.set(ad.state, {
-          views: existing.views + views,
-          clicks: existing.clicks + clicks,
-          count: existing.count + 1,
-        });
-      }
-
-      // City
-      if (ad.city) {
-        const existing = cityMap.get(ad.city) || { views: 0, clicks: 0, count: 0 };
-        cityMap.set(ad.city, {
-          views: existing.views + views,
-          clicks: existing.clicks + clicks,
-          count: existing.count + 1,
-        });
-      }
+      offset += pageSize;
+      hasMore = offset < res.total;
     }
 
-    // Convert maps to sorted arrays
     const mapToArray = (map: Map<string, { views: number; clicks: number; count: number }>): ConversionRateItem[] => {
       return Array.from(map.entries())
         .map(([name, data]) => ({
@@ -2353,6 +2374,11 @@ export async function getConversionRateData(): Promise<ConversionRateData> {
     };
 
     return {
+      overall: {
+        totalViews: overallViews,
+        totalClicks: overallClicks,
+        totalAds: overallAds,
+      },
       byCategory: mapToArray(categoryMap),
       bySubcategory: mapToArray(subcategoryMap),
       byState: mapToArray(stateMap),
@@ -2360,12 +2386,7 @@ export async function getConversionRateData(): Promise<ConversionRateData> {
     };
   } catch (error) {
     console.error("Error fetching conversion rate data:", error);
-    return {
-      byCategory: [],
-      bySubcategory: [],
-      byState: [],
-      byCity: [],
-    };
+    return empty;
   }
 }
 

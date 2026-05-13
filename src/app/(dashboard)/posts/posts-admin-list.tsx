@@ -29,7 +29,6 @@ import {
   AlertTriangle,
   Ban,
   Calendar,
-  CheckCircle,
   ChevronLeft,
   ChevronRight,
   Eye,
@@ -356,12 +355,6 @@ export function PostsAdminList({ lockedType }: { lockedType: PostsAdminLockedTyp
       : lockedType === "event"
         ? "Total Events"
         : "Total Posts";
-  const activeLabel =
-    lockedType === "exchange"
-      ? "Active Listings"
-      : lockedType === "event"
-        ? "Active Events"
-        : "Active Posts";
   const TotalIcon = lockedType === "exchange" ? Repeat : lockedType === "event" ? Calendar : FileText;
 
   const pageTitle =
@@ -402,150 +395,191 @@ export function PostsAdminList({ lockedType }: { lockedType: PostsAdminLockedTyp
         }
       />
 
-      {/* Dashboard metrics — rows 1–2 match Admin Ads; row 3 is exchange status totals */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card className="bg-card/50 border-border/50">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-primary/10">
-                <TotalIcon className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">{totalLabel}</p>
-                <p className="text-2xl font-bold">
-                  {dashboardMetrics?.totalInDatabase?.toLocaleString() ?? "—"}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-card/50 border-border/50">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-green-500/10">
-                <CheckCircle className="h-6 w-6 text-green-500" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">{activeLabel}</p>
-                <p className="text-2xl font-bold">
-                  {dashboardMetrics?.activeInDatabase?.toLocaleString() ?? "—"}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <ListDistributionPieChart
-          title="Clicks vs views (recent sample)"
-          rows={viewClickPieRows}
-          totalInDatabase={dashboardMetrics?.totalInDatabase ?? 0}
-          scannedCount={dashboardMetrics?.scannedCount ?? 0}
-        />
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card className="bg-card/50 border-border/50">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-blue-500/10">
-                <Eye className="h-6 w-6 text-blue-500" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Total Views</p>
-                <p className="text-2xl font-bold">
-                  {(dashboardMetrics?.sampleViewsSum ?? 0).toLocaleString()}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-card/50 border-border/50">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-purple-500/10">
-                <MousePointer className="h-6 w-6 text-purple-500" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Total Clicks</p>
-                <p className="text-2xl font-bold">
-                  {(dashboardMetrics?.sampleClicksSum ?? 0).toLocaleString()}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-card/50 border-border/50">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-amber-500/10">
-                <TrendingUp className="h-6 w-6 text-amber-500" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">CTR</p>
-                <p className="text-2xl font-bold">{sampleCtr.toFixed(1)}%</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {lockedType === "exchange" ? (
-        <div className="grid gap-4 md:grid-cols-3">
-          <Card className="bg-card/50 border-border/50">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <div className="p-3 rounded-lg bg-emerald-500/10">
-                  <CheckCircle className="h-6 w-6 text-emerald-500" />
+      {/* Dashboard: post/event = 2×2 + pie; exchange = 3×2 + pie (listings/CTR, views/clicks, expired/sold) */}
+      {lockedType === "post" || lockedType === "event" ? (
+        <div className="grid gap-4 md:grid-cols-2 md:items-stretch">
+          <div className="grid grid-cols-2 gap-4">
+            <Card className="bg-card/50 border-border/50">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-lg bg-primary/10">
+                    <TotalIcon className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">{totalLabel}</p>
+                    <p className="text-2xl font-bold">
+                      {dashboardMetrics?.totalInDatabase?.toLocaleString() ?? "—"}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Active</p>
-                  <p className="text-2xl font-bold">
-                    {dashboardMetrics?.exchangeStatusCounts != null
-                      ? dashboardMetrics.exchangeStatusCounts.active.toLocaleString()
-                      : "—"}
-                  </p>
+              </CardContent>
+            </Card>
+            <Card className="bg-card/50 border-border/50">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-lg bg-amber-500/10">
+                    <TrendingUp className="h-6 w-6 text-amber-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">CTR</p>
+                    <p className="text-2xl font-bold">{sampleCtr.toFixed(1)}%</p>
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-card/50 border-border/50">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <div className="p-3 rounded-lg bg-zinc-500/15">
-                  <TimerOff className="h-6 w-6 text-zinc-400" />
+              </CardContent>
+            </Card>
+            <Card className="bg-card/50 border-border/50">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-lg bg-blue-500/10">
+                    <Eye className="h-6 w-6 text-blue-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total Views</p>
+                    <p className="text-2xl font-bold">
+                      {(dashboardMetrics?.sampleViewsSum ?? 0).toLocaleString()}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">
-                    Expired{" "}
-                    <span className="text-muted-foreground/70 font-normal">(incl. auction)</span>
-                  </p>
-                  <p className="text-2xl font-bold">
-                    {dashboardMetrics?.exchangeStatusCounts != null
-                      ? dashboardMetrics.exchangeStatusCounts.expired.toLocaleString()
-                      : "—"}
-                  </p>
+              </CardContent>
+            </Card>
+            <Card className="bg-card/50 border-border/50">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-lg bg-purple-500/10">
+                    <MousePointer className="h-6 w-6 text-purple-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total Clicks</p>
+                    <p className="text-2xl font-bold">
+                      {(dashboardMetrics?.sampleClicksSum ?? 0).toLocaleString()}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-card/50 border-border/50">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <div className="p-3 rounded-lg bg-sky-500/10">
-                  <ShoppingBag className="h-6 w-6 text-sky-500" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Sold</p>
-                  <p className="text-2xl font-bold">
-                    {dashboardMetrics?.exchangeStatusCounts != null
-                      ? dashboardMetrics.exchangeStatusCounts.sold.toLocaleString()
-                      : "—"}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
+          <div className="min-h-0 flex flex-col h-full md:min-h-[280px]">
+            <ListDistributionPieChart
+              className="h-full min-h-[260px] flex flex-col"
+              contentClassName="flex-1 justify-center"
+              title="Clicks vs views (recent sample)"
+              rows={viewClickPieRows}
+              totalInDatabase={dashboardMetrics?.totalInDatabase ?? 0}
+              scannedCount={dashboardMetrics?.scannedCount ?? 0}
+            />
+          </div>
         </div>
-      ) : null}
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2 md:items-stretch">
+          <div className="grid grid-cols-2 gap-4">
+            <Card className="bg-card/50 border-border/50">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-lg bg-primary/10">
+                    <TotalIcon className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">{totalLabel}</p>
+                    <p className="text-2xl font-bold">
+                      {dashboardMetrics?.totalInDatabase?.toLocaleString() ?? "—"}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-card/50 border-border/50">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-lg bg-amber-500/10">
+                    <TrendingUp className="h-6 w-6 text-amber-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">CTR</p>
+                    <p className="text-2xl font-bold">{sampleCtr.toFixed(1)}%</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-card/50 border-border/50">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-lg bg-blue-500/10">
+                    <Eye className="h-6 w-6 text-blue-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total Views</p>
+                    <p className="text-2xl font-bold">
+                      {(dashboardMetrics?.sampleViewsSum ?? 0).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-card/50 border-border/50">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-lg bg-purple-500/10">
+                    <MousePointer className="h-6 w-6 text-purple-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total Clicks</p>
+                    <p className="text-2xl font-bold">
+                      {(dashboardMetrics?.sampleClicksSum ?? 0).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-card/50 border-border/50">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-lg bg-zinc-500/15">
+                    <TimerOff className="h-6 w-6 text-zinc-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">
+                      Expired{" "}
+                      <span className="text-muted-foreground/70 font-normal">(incl. auction)</span>
+                    </p>
+                    <p className="text-2xl font-bold">
+                      {dashboardMetrics?.exchangeStatusCounts != null
+                        ? dashboardMetrics.exchangeStatusCounts.expired.toLocaleString()
+                        : "—"}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-card/50 border-border/50">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-lg bg-sky-500/10">
+                    <ShoppingBag className="h-6 w-6 text-sky-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Sold</p>
+                    <p className="text-2xl font-bold">
+                      {dashboardMetrics?.exchangeStatusCounts != null
+                        ? dashboardMetrics.exchangeStatusCounts.sold.toLocaleString()
+                        : "—"}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+          <div className="min-h-0 flex flex-col h-full md:min-h-[360px]">
+            <ListDistributionPieChart
+              className="h-full min-h-[300px] flex flex-col"
+              contentClassName="flex-1 justify-center"
+              title="Clicks vs views (recent sample)"
+              rows={viewClickPieRows}
+              totalInDatabase={dashboardMetrics?.totalInDatabase ?? 0}
+              scannedCount={dashboardMetrics?.scannedCount ?? 0}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Search and Filters */}
       <Card className="bg-card/50 border-border/50">
@@ -804,20 +838,6 @@ function PostCard({ post, onClick, showDistance = false }: PostCardProps) {
         ) : (
           <div className="w-full h-full flex items-center justify-center">
             <FileText className="h-8 w-8 text-muted-foreground/50" />
-          </div>
-        )}
-
-        {/* Type label — top-left, same family as admin ad slot pill */}
-        {post.type === "event" && (
-          <div className="absolute top-2 left-2 z-10 px-2 py-1 rounded-md bg-black/70 text-white text-xs font-medium flex items-center gap-1 shadow">
-            <Calendar className="w-3 h-3" />
-            Event
-          </div>
-        )}
-        {post.type === "exchange" && (
-          <div className="absolute top-2 left-2 z-10 px-2 py-1 rounded-md bg-black/70 text-white text-xs font-medium flex items-center gap-1 shadow">
-            <Repeat className="w-3 h-3" />
-            Exchange
           </div>
         )}
 

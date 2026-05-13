@@ -45,14 +45,7 @@ export default function ConversionsPage() {
     getAllCategories().then(setAllCategories);
   }, [fetchData]);
 
-  // Calculate overall stats
-  const overallStats = data
-    ? {
-        totalViews: data.byCategory.reduce((sum, item) => sum + item.totalViews, 0),
-        totalClicks: data.byCategory.reduce((sum, item) => sum + item.totalClicks, 0),
-        totalAds: data.byCategory.reduce((sum, item) => sum + item.adCount, 0),
-      }
-    : { totalViews: 0, totalClicks: 0, totalAds: 0 };
+  const overallStats = data?.overall ?? { totalViews: 0, totalClicks: 0, totalAds: 0 };
 
   const overallRate =
     overallStats.totalViews > 0
@@ -264,7 +257,7 @@ function ConversionTable({ items, loading, labelFormatter }: ConversionTableProp
         // Use actual percentage (0-100) for bar width
         const barWidth = Math.min(item.conversionRate, 100);
         const isTopThree = index < 3 && item.conversionRate > 0;
-        
+
         return (
           <div
             key={item.name}
@@ -273,19 +266,21 @@ function ConversionTable({ items, loading, labelFormatter }: ConversionTableProp
             <div className="flex items-center justify-between mb-2">
               {/* Label and rank */}
               <div className="flex items-center gap-2">
-                <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
-                  isTopThree ? "bg-primary/20 text-primary" : "bg-secondary/50 text-muted-foreground"
-                }`}>
+                <span
+                  className={`text-xs font-medium px-1.5 py-0.5 rounded ${
+                    isTopThree ? "bg-primary/20 text-primary" : "bg-secondary/50 text-muted-foreground"
+                  }`}
+                >
                   #{index + 1}
                 </span>
-                <span className="font-medium text-foreground text-sm">
-                  {labelFormatter(item.name)}
-                </span>
+                <span className="font-medium text-foreground text-sm">{labelFormatter(item.name)}</span>
               </div>
               {/* Conversion rate */}
-              <span className={`text-lg font-bold ${
-                item.conversionRate > 0 ? "text-primary" : "text-muted-foreground"
-              }`}>
+              <span
+                className={`text-lg font-bold ${
+                  item.conversionRate > 0 ? "text-primary" : "text-muted-foreground"
+                }`}
+              >
                 {item.conversionRate.toFixed(1)}%
               </span>
             </div>

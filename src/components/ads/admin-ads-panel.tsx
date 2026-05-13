@@ -1,15 +1,5 @@
 "use client";
 
-import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,7 +27,6 @@ import {
     AdSlot,
     AdTagType,
     createSponsorAd,
-    deleteSponsorAd,
     getAdminAdsBySlot,
     getSponsorAdsFieldDistribution,
     getSlotUsageCounts,
@@ -49,14 +38,12 @@ import {
     type FieldDistributionResult,
     SlotUsageInfo,
     SponsorAd,
-    updateSponsorAd
 } from "@/lib/user-actions";
 import { ListDistributionPieChart } from "@/components/posts/list-distribution-pie";
 import { getStateFullName } from "@/lib/utils";
 import {
     AlertTriangle,
     Ban,
-    CheckCircle,
     Eye,
     Heart,
     Loader2,
@@ -65,13 +52,14 @@ import {
     Play,
     Plus,
     RefreshCw,
+    Search,
     Shield,
     TrendingUp,
-    Trash2,
     Users,
+    X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 export interface AdminAdsPanelProps {
@@ -79,6 +67,14 @@ export interface AdminAdsPanelProps {
   title: string;
   description: string;
   headerIcon?: LucideIcon;
+}
+
+/** URL `slots` query: show every cell, only cells with an ad, or only empty cells */
+type SlotFillFilter = "all" | "fill" | "unfill";
+
+function parseSlotFillFilter(raw: string | null): SlotFillFilter {
+  if (raw === "fill" || raw === "unfill") return raw;
+  return "all";
 }
 
 interface CreateAdForm {
@@ -113,25 +109,10 @@ const initialFormState: CreateAdForm = {
   website: "",
 };
 
-interface EditAdForm {
-  title: string;
-  description: string;
-  location: PlaceValue | null;
-  state: string;
-  city: string;
-  category: string;
-  subcategory: string;
-  slot: AdSlot | null;
-  phoneNumber: string;
-  website: string;
-  existingMedia: string[];
-  newMediaFiles: File[];
-  newMediaPreviews: string[];
-  newPosterFiles: Array<File | null>;
-}
-
 export function AdminAdsPanel({ tag, title, description, headerIcon: HeaderIcon = Shield }: AdminAdsPanelProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { admin } = useAuth();
   const [loading, setLoading] = useState(true);
   const [adminAdsBySlot, setAdminAdsBySlot] = useState<Map<number, SponsorAd[]>>(new Map());
@@ -145,35 +126,62 @@ export function AdminAdsPanel({ tag, title, description, headerIcon: HeaderIcon 
   const [creating, setCreating] = useState(false);
   const [slotUsageCounts, setSlotUsageCounts] = useState<SlotUsageInfo>({});
 
-  const [showEditDialog, setShowEditDialog] = useState(false);
-  const [editingAd, setEditingAd] = useState<SponsorAd | null>(null);
-  const [editForm, setEditForm] = useState<EditAdForm>({
-    title: "",
-    description: "",
-    location: null,
-    state: "",
-    city: "",
-    category: "",
-    subcategory: "",
-    slot: null,
-    phoneNumber: "",
-    website: "",
-    existingMedia: [],
-    newMediaFiles: [],
-    newMediaPreviews: [],
-    newPosterFiles: [],
-  });
-  const [updating, setUpdating] = useState(false);
-  const [editSlotUsageCounts, setEditSlotUsageCounts] = useState<SlotUsageInfo>({});
-
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [deletingAd, setDeletingAd] = useState<SponsorAd | null>(null);
-  const [deleting, setDeleting] = useState(false);
-
   const [dynamicCategories, setDynamicCategories] = useState<Category[]>([]);
   const [createSubcategories, setCreateSubcategories] = useState<Category[]>([]);
-  const [editSubcategoriesList, setEditSubcategoriesList] = useState<Category[]>([]);
   const [distribution, setDistribution] = useState<FieldDistributionResult | null>(null);
+
+  const [search, setSearch] = useState(() => searchParams.get("search") || "");
+  const [slotFillFilter, setSlotFillFilter] = useState<SlotFillFilter>(() =>
+    parseSlotFillFilter(searchParams.get("slots"))
+  );
+
+  // Sync filters to URL (same pattern as posts-admin-list / users page)
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (tag === "event" || tag === "exchange") params.set("tag", tag);
+    const trimmed = search.trim();
+    if (trimmed) params.set("search", trimmed);
+    if (slotFillFilter !== "all") params.set("slots", slotFillFilter);
+    const qs = params.toString();
+    const base = pathname || "/ads/admin";
+    router.replace(qs ? `${base}?${qs}` : base, { scroll: false });
+  }, [tag, search, slotFillFilter, router, pathname]);
+
+  const activeFilterCount = useMemo(() => {
+    let n = 0;
+    if (search.trim()) n++;
+    if (slotFillFilter !== "all") n++;
+    return n;
+  }, [search, slotFillFilter]);
+
+  const clearFilters = useCallback(() => {
+    setSearch("");
+    setSlotFillFilter("all");
+  }, []);
+
+  const adMatchesFilters = useCallback(
+    (ad: SponsorAd | null, slotLabel: string) => {
+      if (!ad) return true;
+      const q = search.trim().toLowerCase();
+      if (!q) return true;
+      const hay = [
+        ad.title,
+        ad.description,
+        ad.city,
+        ad.state,
+        ad.category,
+        ad.subcategory,
+        ad.phoneNumber,
+        ad.website,
+        slotLabel,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    },
+    [search]
+  );
 
   const fetchDistribution = useCallback(() => {
     void getSponsorAdsFieldDistribution({
@@ -349,171 +357,14 @@ export function AdminAdsPanel({ tag, title, description, headerIcon: HeaderIcon 
     setShowCreateDialog(true);
   };
 
-  const handleOpenEditDialog = async (ad: SponsorAd) => {
-    if (!ad.isAdminCreated) return;
-
-    const [usage, cats] = await Promise.all([
-      getSlotUsageCounts(),
-      getCategories(),
-    ]);
-    setDynamicCategories(cats);
-    setEditSlotUsageCounts(usage);
-
-    setEditingAd(ad);
-    setEditForm({
-      title: ad.title,
-      description: ad.description || "",
-      location: ad.state && ad.city ? {
-        placeId: "",
-        address: `${ad.city}, ${ad.state}`,
-        latitude: 0,
-        longitude: 0,
-        city: ad.city,
-        state: ad.state,
-      } : null,
-      state: ad.state,
-      city: ad.city,
-      category: ad.category,
-      subcategory: ad.subcategory || "",
-      slot: ad.slot !== undefined ? (ad.slot + 1) as AdSlot : null,
-      phoneNumber: ad.phoneNumber || "",
-      website: ad.website || "",
-      existingMedia: ad.media || [],
-      newMediaFiles: [],
-      newMediaPreviews: [],
-      newPosterFiles: [],
-    });
-    setShowEditDialog(true);
-  };
-
-  const handleEditLocationChange = (location: PlaceValue | null) => {
-    if (location?.state) {
-      const stateFullName = getStateFullName(location.state);
-      setEditForm((prev) => ({
-        ...prev,
-        location,
-        state: stateFullName,
-        city: location.city || "",
-      }));
-    } else {
-      setEditForm((prev) => ({
-        ...prev,
-        location,
-        state: "",
-        city: "",
-      }));
-    }
-  };
-
-  useEffect(() => {
-    if (editForm.category) {
-      getSubcategories(editForm.category).then(setEditSubcategoriesList);
-    } else {
-      setEditSubcategoriesList([]);
-    }
-  }, [editForm.category]);
-
-  const handleUpdateAd = async () => {
-    if (!editingAd || !editForm.title || !editForm.state || !editForm.city || !editForm.category || !editForm.slot) {
-      alert("Please fill in all required fields");
-      return;
-    }
-
-    if (editForm.existingMedia.length === 0 && editForm.newMediaFiles.length === 0) {
-      alert("Please include at least one photo or video");
-      return;
-    }
-
-    setUpdating(true);
-    try {
-      let finalMedia = [...editForm.existingMedia];
-      let newMediaUrls: string[] = [];
-
-      if (editForm.newMediaFiles.length > 0) {
-        newMediaUrls = await uploadFiles(editForm.newMediaFiles);
-        finalMedia = [...finalMedia, ...newMediaUrls];
-      }
-
-      const firstMediaUrl = finalMedia[0] || "";
-      const originalFirstMediaUrl = editingAd.media?.[0] || "";
-      let nextCoverImage = "";
-
-      if (firstMediaUrl) {
-        if (!isVideoUrl(firstMediaUrl)) {
-          nextCoverImage = firstMediaUrl;
-        } else {
-          const firstMediaFromNewUpload = editForm.existingMedia.length === 0;
-
-          if (firstMediaFromNewUpload) {
-            const firstPoster = editForm.newPosterFiles[0];
-            if (firstPoster) {
-              const [posterUrl] = await uploadFiles([firstPoster]);
-              nextCoverImage = posterUrl || "";
-
-              const thumbId = posterUrl?.match(/\/files\/([^/]+)\//)?.[1];
-              if (thumbId) {
-                finalMedia = finalMedia.map((url) =>
-                  isVideoUrl(url) && !url.includes("thumb=") ? `${url}&thumb=${thumbId}` : url
-                );
-              }
-            } else {
-              nextCoverImage = editingAd.image || "";
-            }
-          } else if (firstMediaUrl === originalFirstMediaUrl) {
-            nextCoverImage = editingAd.image || "";
-          }
-        }
-      }
-
-      await updateSponsorAd(editingAd.$id, {
-        title: editForm.title,
-        description: editForm.description || undefined,
-        media: finalMedia,
-        image: nextCoverImage,
-        state: editForm.state,
-        city: editForm.city,
-        category: editForm.category,
-        subcategory: editForm.subcategory || undefined,
-        slot: editForm.slot,
-        phoneNumber: editForm.phoneNumber || undefined,
-        website: editForm.website || undefined,
-        tag,
-      });
-      editForm.newMediaPreviews.forEach((url) => URL.revokeObjectURL(url));
-      setShowEditDialog(false);
-      setEditingAd(null);
-      fetchAds();
-      fetchDistribution();
-    } catch (error) {
-      console.error("Failed to update ad:", error);
-      alert("Failed to update ad. Please try again.");
-    } finally {
-      setUpdating(false);
-    }
-  };
-
-  const handleOpenDeleteDialog = (ad: SponsorAd) => {
-    setDeletingAd(ad);
-    setShowDeleteDialog(true);
-  };
-
-  const handleDeleteAd = async () => {
-    if (!deletingAd) return;
-
-    setDeleting(true);
-    try {
-      await deleteSponsorAd(deletingAd.$id);
-      setShowDeleteDialog(false);
-      setDeletingAd(null);
-      fetchAds();
-      fetchDistribution();
-    } catch (error) {
-      console.error("Failed to delete ad:", error);
-      alert("Failed to delete ad. Please try again.");
-    } finally {
-      setDeleting(false);
-    }
-  };
+  const goToAdDetail = useCallback(
+    (ad: SponsorAd) => {
+      if (!ad.isAdminCreated) return;
+      const qs = tag !== "home" ? `?tag=${tag}` : "";
+      router.push(`/ads/${ad.$id}${qs}`);
+    },
+    [router, tag]
+  );
 
   const adMetrics = (() => {
     let totalViews = 0;
@@ -558,82 +409,127 @@ export function AdminAdsPanel({ tag, title, description, headerIcon: HeaderIcon 
         }
       />
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card className="bg-card/50 border-border/50">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-primary/10">
-                <Megaphone className="h-6 w-6 text-primary" />
+      <div className="grid gap-4 md:grid-cols-2 md:items-stretch">
+        <div className="grid grid-cols-2 gap-4">
+          <Card className="bg-card/50 border-border/50">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-4">
+                <div className="p-3 rounded-lg bg-primary/10">
+                  <Megaphone className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Total Ads</p>
+                  <p className="text-2xl font-bold">{stats.totalAds}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Total Ads</p>
-                <p className="text-2xl font-bold">{stats.totalAds}</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-card/50 border-border/50">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-4">
+                <div className="p-3 rounded-lg bg-amber-500/10">
+                  <TrendingUp className="h-6 w-6 text-amber-500" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">CTR</p>
+                  <p className="text-2xl font-bold">{adMetrics.ctr.toFixed(1)}%</p>
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-card/50 border-border/50">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-green-500/10">
-                <CheckCircle className="h-6 w-6 text-green-500" />
+            </CardContent>
+          </Card>
+          <Card className="bg-card/50 border-border/50">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-4">
+                <div className="p-3 rounded-lg bg-blue-500/10">
+                  <Eye className="h-6 w-6 text-blue-500" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Total Views</p>
+                  <p className="text-2xl font-bold">{adMetrics.totalViews.toLocaleString()}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Active Ads</p>
-                <p className="text-2xl font-bold">{stats.activeAds}</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-card/50 border-border/50">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-4">
+                <div className="p-3 rounded-lg bg-purple-500/10">
+                  <MousePointer className="h-6 w-6 text-purple-500" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Total Clicks</p>
+                  <p className="text-2xl font-bold">{adMetrics.totalClicks.toLocaleString()}</p>
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-        <ListDistributionPieChart
-          title="Clicks vs views (recent sample)"
-          rows={viewClickPieRows}
-          totalInDatabase={distribution?.totalInDatabase ?? 0}
-          scannedCount={distribution?.scannedCount ?? 0}
-        />
+            </CardContent>
+          </Card>
+        </div>
+        <div className="min-h-0 flex flex-col h-full md:min-h-[280px]">
+          <ListDistributionPieChart
+            className="h-full min-h-[260px] flex flex-col"
+            contentClassName="flex-1 justify-center"
+            title="Clicks vs views (recent sample)"
+            rows={viewClickPieRows}
+            totalInDatabase={distribution?.totalInDatabase ?? 0}
+            scannedCount={distribution?.scannedCount ?? 0}
+          />
+        </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card className="bg-card/50 border-border/50">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-blue-500/10">
-                <Eye className="h-6 w-6 text-blue-500" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Total Views</p>
-                <p className="text-2xl font-bold">{adMetrics.totalViews.toLocaleString()}</p>
-              </div>
+      {/* Search and filters — same card pattern as posts / user ads */}
+      <Card className="bg-card/50 border-border/50">
+        <CardContent className="pt-6 space-y-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-4">
+            <div className="space-y-1.5 min-w-0">
+              <label htmlFor="admin-ads-search" className="text-xs font-medium text-muted-foreground">
+                Search
+              </label>
+              <form onSubmit={(e) => e.preventDefault()} className="block">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 z-10 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  <Input
+                    id="admin-ads-search"
+                    placeholder="Search by title, location, slot..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="h-9 pl-10 bg-input/50 border-border/50"
+                  />
+                </div>
+              </form>
             </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-card/50 border-border/50">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-purple-500/10">
-                <MousePointer className="h-6 w-6 text-purple-500" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Total Clicks</p>
-                <p className="text-2xl font-bold">{adMetrics.totalClicks.toLocaleString()}</p>
-              </div>
+            <div className="space-y-1.5 min-w-0">
+              <label htmlFor="admin-ads-slots" className="text-xs font-medium text-muted-foreground">
+                Slots
+              </label>
+              <select
+                id="admin-ads-slots"
+                value={slotFillFilter}
+                onChange={(e) => setSlotFillFilter(parseSlotFillFilter(e.target.value))}
+                className="w-full h-9 px-3 rounded-md border border-border/50 bg-input/50 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+              >
+                <option value="all">All</option>
+                <option value="fill">Filled</option>
+                <option value="unfill">Unfilled</option>
+              </select>
             </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-card/50 border-border/50">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-amber-500/10">
-                <TrendingUp className="h-6 w-6 text-amber-500" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">CTR</p>
-                <p className="text-2xl font-bold">{adMetrics.ctr.toFixed(1)}%</p>
-              </div>
+          </div>
+
+          {activeFilterCount > 0 && (
+            <div className="pt-4 border-t border-border/30 flex justify-end">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={clearFilters}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-4 w-4 mr-1" />
+                Clear Filters
+              </Button>
             </div>
-          </CardContent>
-        </Card>
-      </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card className="bg-gradient-to-br from-emerald-950/50 to-emerald-900/30 border-emerald-800/50">
         <CardHeader className="pb-3">
@@ -642,7 +538,7 @@ export function AdminAdsPanel({ tag, title, description, headerIcon: HeaderIcon 
             Ad Slots
           </CardTitle>
           <p className="text-sm text-emerald-300/70">
-            Click a slot to edit. Click empty slot to add ad.
+            Click a filled slot to open the detail page. Click an empty slot to add a new ad.
           </p>
         </CardHeader>
         <CardContent>
@@ -694,37 +590,62 @@ export function AdminAdsPanel({ tag, title, description, headerIcon: HeaderIcon 
                     });
                   }
                 }
-                return cells.map(({ key, displaySlot, subIndex, ad, canAdd }) => {
+                const visibleCells = cells.filter(({ ad }) => {
+                  if (slotFillFilter === "fill") return ad != null;
+                  if (slotFillFilter === "unfill") return ad == null;
+                  return true;
+                });
+                if (visibleCells.length === 0) {
+                  return (
+                    <div className="flex flex-col items-center justify-center py-14 text-center text-muted-foreground px-4">
+                      <Megaphone className="h-12 w-12 mb-3 opacity-40" />
+                      <p className="text-sm font-medium text-foreground/80">No slots match this view</p>
+                      <p className="text-xs mt-1 max-w-sm">
+                        {slotFillFilter === "fill"
+                          ? "Every slot currently has no ad, or try another tab (Home / Event / Exchange)."
+                          : "There are no empty slots left, or try switching to Filled / All."}
+                      </p>
+                    </div>
+                  );
+                }
+                return visibleCells.map(({ key, displaySlot, subIndex, ad, canAdd }) => {
                   const label = (MULTI_USE_SLOTS as readonly number[]).includes(displaySlot)
                     ? `${displaySlot}-${subIndex + 1}`
                     : `${displaySlot}`;
                   const eng = ad
                     ? adEngagementById[ad.$id] ?? { likes: 0, stamps: 0, reports: 0 }
                     : null;
+                  const cellMatches = adMatchesFilters(ad, label);
+                  const filteredOut = Boolean(ad && !cellMatches);
+                  const interactive = (!!ad && cellMatches) || (!ad && canAdd);
                   return (
                     <div
                       key={key}
-                      role={ad || canAdd ? "button" : undefined}
-                      tabIndex={ad || canAdd ? 0 : -1}
-                      aria-disabled={!ad && !canAdd}
+                      role={interactive ? "button" : undefined}
+                      tabIndex={interactive ? 0 : -1}
+                      aria-disabled={!interactive}
                       onClick={() => {
-                        if (ad) handleOpenEditDialog(ad);
+                        if (filteredOut) return;
+                        if (ad) goToAdDetail(ad);
                         else if (canAdd) handleClickEmptySlot(displaySlot);
                       }}
                       onKeyDown={(e) => {
-                        if (!ad && !canAdd) return;
+                        if (!interactive) return;
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
-                          if (ad) handleOpenEditDialog(ad);
-                          else handleClickEmptySlot(displaySlot);
+                          if (filteredOut) return;
+                          if (ad) goToAdDetail(ad);
+                          else if (canAdd) handleClickEmptySlot(displaySlot);
                         }
                       }}
                       className={
                         ad
                           ? `flex flex-col rounded-xl overflow-hidden border bg-card/50 transition-all group ${
-                              ad.isBlacklisted
-                                ? "border-red-500/50 bg-red-950/10 hover:border-red-500/70 hover:shadow-lg hover:scale-[1.01] hover:z-10 cursor-pointer"
-                                : "border-border/50 hover:border-primary/30 hover:shadow-lg hover:scale-[1.01] hover:z-10 cursor-pointer"
+                              filteredOut
+                                ? "opacity-[0.28] grayscale border-border/30 cursor-default pointer-events-none"
+                                : ad.isBlacklisted
+                                  ? "border-red-500/50 bg-red-950/10 hover:border-red-500/70 hover:shadow-lg hover:scale-[1.01] hover:z-10 cursor-pointer"
+                                  : "border-border/50 hover:border-primary/30 hover:shadow-lg hover:scale-[1.01] hover:z-10 cursor-pointer"
                             }`
                           : `flex flex-col rounded-xl overflow-hidden border transition-all ${
                               canAdd
@@ -762,10 +683,6 @@ export function AdminAdsPanel({ tag, title, description, headerIcon: HeaderIcon 
                               </>
                             );
                           })()}
-                          <div className="absolute top-2 left-2 z-10 px-2 py-1 rounded-md bg-black/70 text-white text-xs font-medium flex items-center gap-1 shadow">
-                            <Megaphone className="w-3 h-3 shrink-0 opacity-90" />
-                            Ad
-                          </div>
                           <div className="absolute top-2 right-2 flex flex-col gap-1 items-end z-10">
                             {ad.media?.some((m) => isVideoUrl(m)) && (
                               <div className="px-2 py-1 rounded bg-black/60 text-white text-xs font-medium flex items-center gap-1">
@@ -960,151 +877,6 @@ export function AdminAdsPanel({ tag, title, description, headerIcon: HeaderIcon 
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Edit Ad Dialog */}
-      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent
-          className="sm:max-w-[500px] max-h-[90dvh] flex flex-col p-0 gap-0 overflow-hidden top-[5vh] translate-y-0 left-[50%] -translate-x-1/2 bg-card border-border"
-          onPointerDownOutside={(e) => { const target = e.target as HTMLElement; if (target.closest('.pac-container')) e.preventDefault(); }}
-          onInteractOutside={(e) => { const target = e.target as HTMLElement; if (target.closest('.pac-container')) e.preventDefault(); }}
-        >
-          <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-2 border-b border-border/50">
-            <DialogTitle className="text-xl">Edit Ad</DialogTitle>
-            <DialogDescription>Update the ad details.</DialogDescription>
-          </DialogHeader>
-
-          <div className="flex-1 min-h-0 overflow-y-scroll overflow-x-hidden overscroll-contain px-6 py-4 touch-pan-y" style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
-          <div className="space-y-4 pb-4">
-            {editForm.existingMedia.length > 0 && (
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Current Media</Label>
-                <div className="grid grid-cols-3 gap-2">
-                  {editForm.existingMedia.map((url, idx) => (
-                    <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-border/50 group">
-                      {isVideoUrl(url) ? (
-                        <>
-                          {idx === 0 && editingAd?.image ? (
-                            <ImageThumbnail src={getImageUrl(editingAd.image, 200, 200)} alt="" className="w-full h-full object-cover" />
-                          ) : (
-                            <VideoThumbnail src={getVideoUrl(url)} />
-                          )}
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none"><Play className="h-6 w-6 text-white/80" /></div>
-                          <div className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/70 text-white text-xs pointer-events-none z-10">Video</div>
-                        </>
-                      ) : (
-                        <ImageThumbnail src={getImageUrl(url, 200, 200)} alt="" className="w-full h-full object-cover" />
-                      )}
-                      <button type="button" onClick={() => setEditForm((prev) => ({ ...prev, existingMedia: prev.existingMedia.filter((_, i) => i !== idx) }))} className="absolute top-1 right-1 p-1 rounded-full bg-red-500/80 text-white opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <MediaUpload
-              value={{ files: editForm.newMediaFiles, previews: editForm.newMediaPreviews, posters: editForm.newPosterFiles }}
-              onChange={({ files, previews, posters }) => setEditForm((prev) => ({ ...prev, newMediaFiles: files, newMediaPreviews: previews, newPosterFiles: posters }))}
-              label="Add New Media"
-              placeholder="Tap to upload new photos or videos"
-              addMoreLabel="Add more"
-            />
-
-            <div className="space-y-2">
-              <Label htmlFor="edit-title">Title</Label>
-              <Input id="edit-title" value={editForm.title} onChange={(e) => setEditForm((prev) => ({ ...prev, title: e.target.value }))} className="bg-input/50 border-border/50" />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="edit-description">Description</Label>
-              <textarea id="edit-description" value={editForm.description} onChange={(e) => setEditForm((prev) => ({ ...prev, description: e.target.value }))} className="w-full min-h-[80px] px-3 py-2 rounded-md bg-input/50 border border-border/50 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/50" />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-phoneNumber">Phone Number</Label>
-                <Input id="edit-phoneNumber" type="tel" placeholder="(optional)" value={editForm.phoneNumber} onChange={(e) => setEditForm((prev) => ({ ...prev, phoneNumber: e.target.value }))} className="bg-input/50 border-border/50" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-website">Website</Label>
-                <Input id="edit-website" type="url" placeholder="https://..." value={editForm.website} onChange={(e) => setEditForm((prev) => ({ ...prev, website: e.target.value }))} className="bg-input/50 border-border/50" />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Location</Label>
-              <LocationPicker value={editForm.location} onChange={handleEditLocationChange} placeholder="Search city or address..." showCurrentLocation={false} countryRestriction="us" />
-              {editForm.state && editForm.city && (<p className="text-xs text-muted-foreground">{editForm.city}, {editForm.state}</p>)}
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-category">Category</Label>
-                <select id="edit-category" value={editForm.category} onChange={(e) => setEditForm((prev) => ({ ...prev, category: e.target.value, subcategory: "" }))} className="w-full h-9 px-3 rounded-md bg-input/50 border border-border/50 text-sm">
-                  <option value="">Select category</option>
-                  {dynamicCategories.map((cat) => (<option key={cat.value} value={cat.value}>{cat.name}</option>))}
-                </select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-subcategory">Subcategory</Label>
-                <select id="edit-subcategory" value={editForm.subcategory} onChange={(e) => setEditForm((prev) => ({ ...prev, subcategory: e.target.value }))} disabled={!editForm.category} className="w-full h-9 px-3 rounded-md bg-input/50 border border-border/50 text-sm disabled:opacity-50">
-                  <option value="">Select subcategory</option>
-                  {editSubcategoriesList.map((sub) => (<option key={sub.value} value={sub.value}>{sub.name}</option>))}
-                </select>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Ad Slot</Label>
-              <div className="grid grid-cols-5 gap-2">
-                {AD_SLOTS.map((slot) => {
-                  const currentUsage = editSlotUsageCounts[slot] || 0;
-                  const maxUsage = getSlotMaxUsage(slot);
-                  const isCurrentSlot = editForm.slot === slot;
-                  const canSelect = currentUsage < maxUsage || isCurrentSlot;
-                  return (
-                    <button key={slot} type="button" onClick={() => canSelect && setEditForm((prev) => ({ ...prev, slot }))} disabled={!canSelect}
-                      className={`p-2 rounded-lg border text-center transition-all ${isCurrentSlot ? "border-primary bg-primary/10 text-primary" : canSelect ? "border-border/50 hover:border-primary/50 hover:bg-secondary/50" : "border-border/30 bg-secondary/20 text-muted-foreground opacity-50 cursor-not-allowed"}`}>
-                      <span className="font-bold">{slot}</span>
-                      <span className="block text-[10px] opacity-70">{currentUsage}/{maxUsage}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-          </div>
-
-          <DialogFooter className="flex-shrink-0 border-t border-border/50 px-6 py-4 bg-card">
-            <Button variant="outline" onClick={() => setShowEditDialog(false)} disabled={updating}>Cancel</Button>
-            <Button variant="destructive" onClick={() => { if (editingAd) { setShowEditDialog(false); handleOpenDeleteDialog(editingAd); } }} disabled={updating}>
-              <Trash2 className="h-4 w-4 mr-2" />Delete
-            </Button>
-            <Button onClick={handleUpdateAd} disabled={updating}>
-              {updating ? (<><Loader2 className="h-4 w-4 mr-2 animate-spin" />Updating...</>) : "Save Changes"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent className="bg-card border-border">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Ad</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete &quot;{deletingAd?.title}&quot;? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteAd} disabled={deleting} className="bg-destructive hover:bg-destructive/90">
-              {deleting ? (<><Loader2 className="h-4 w-4 mr-2 animate-spin" />Deleting...</>) : (<><Trash2 className="h-4 w-4 mr-2" />Delete</>)}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
