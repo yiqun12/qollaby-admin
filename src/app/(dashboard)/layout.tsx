@@ -21,6 +21,9 @@ import {
   CreditCard,
   Menu,
   X,
+  Calendar,
+  Repeat,
+  LayoutGrid,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -31,8 +34,10 @@ const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/users", label: "Users", icon: Users },
   { href: "/subscriptions", label: "Subscriptions", icon: CreditCard },
-  { href: "/posts", label: "Posts", icon: FileText },
-  { href: "/ads/admin", label: "Admin Ads", icon: Shield },
+  { href: "/posts/feed", label: "Posts", icon: FileText },
+  { href: "/posts/events", label: "Events", icon: Calendar },
+  { href: "/posts/exchange", label: "Exchange", icon: Repeat },
+  { href: "/ads/admin", label: "Admin Ads", icon: LayoutGrid },
   { href: "/ads/user", label: "User Ads", icon: Megaphone },
   { href: "/conversions", label: "Conversions", icon: TrendingUp },
   { href: "/appeals", label: "Appeals", icon: MessageSquare },
@@ -89,6 +94,13 @@ export default function DashboardLayout({
 
   const isActive = (href: string) => {
     if (href === "/") return pathname === "/";
+    if (href === "/ads/admin") {
+      return (
+        pathname === "/ads/admin" ||
+        pathname === "/ads/event" ||
+        pathname === "/ads/exchange"
+      );
+    }
     return pathname.startsWith(href);
   };
 

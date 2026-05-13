@@ -10,13 +10,25 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MediaCarousel } from "@/components/ui/media-carousel";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getImageUrl, getVideoUrl, isVideoUrl } from "@/lib/appwrite";
 import { getAllCategories, getCategoryLabel, getSubCategoryLabel, Category } from "@/lib/category-actions";
 import { fetchPostStatsApi } from "@/lib/post-stats-client";
+import { AdConversionRow, AdStatRow } from "@/components/metrics/ad-stat-rows";
+import { postEngagementAsAdMetrics } from "@/components/posts/post-performance-metrics";
+import { AdminNotesEditor } from "@/components/posts/admin-notes-editor";
 import {
   blacklistPost,
   deletePost,
@@ -28,6 +40,8 @@ import {
   ExchangeListing,
   Report,
   unblacklistPost,
+  updatePostDocument,
+  updateExchangeListingDocument,
 } from "@/lib/user-actions";
 import { Profile } from "@/types/profile.types";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -46,7 +60,10 @@ import {
   Image as ImageIcon,
   Loader2,
   MapPin,
+  MousePointer,
+  Pencil,
   Play,
+  Eye,
   RefreshCw,
   Tag,
   Trash2,
@@ -61,6 +78,13 @@ export default function PostDetailPage() {
   const searchParams = useSearchParams();
   const postId = params.postId as string;
   const isExchange = searchParams.get("type") === "exchange";
+  const fromList = searchParams.get("from");
+  const listReturnPath =
+    isExchange
+      ? "/posts/exchange"
+      : fromList === "event"
+        ? "/posts/events"
+        : "/posts/feed";
 
   const [loading, setLoading] = useState(true);
   const [post, setPost] = useState<Post | ExchangeListing | null>(null);
@@ -74,12 +98,85 @@ export default function PostDetailPage() {
   const [deleteDialog, setDeleteDialog] = useState(false);
   const [reportsExpanded, setReportsExpanded] = useState(false);
   const [allCategories, setAllCategories] = useState<Category[]>([]);
+  const [adminNotes, setAdminNotes] = useState("");
+  const [editTitle, setEditTitle] = useState("");
+  const [editSmallDescription, setEditSmallDescription] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [saveEditLoading, setSaveEditLoading] = useState(false);
+  const [saveEditError, setSaveEditError] = useState<string | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+
+  useEffect(() => {
+    if (!post) return;
+    if (isExchange) {
+      const x = post as ExchangeListing;
+      setEditTitle(x.title ?? "");
+      setEditSmallDescription("");
+      setEditDescription(x.description ?? "");
+    } else {
+      const p = post as Post;
+      setEditTitle(p.title ?? "");
+      setEditSmallDescription(p.smallDescription ?? "");
+      setEditDescription(p.description ?? "");
+    }
+    setSaveEditError(null);
+  }, [post, isExchange, postId]);
+
+  const resetPostEdits = useCallback(() => {
+    if (!post) return;
+    if (isExchange) {
+      const x = post as ExchangeListing;
+      setEditTitle(x.title ?? "");
+      setEditSmallDescription("");
+      setEditDescription(x.description ?? "");
+    } else {
+      const p = post as Post;
+      setEditTitle(p.title ?? "");
+      setEditSmallDescription(p.smallDescription ?? "");
+      setEditDescription(p.description ?? "");
+    }
+    setSaveEditError(null);
+  }, [post, isExchange]);
+
+  const handleSavePostEdits = async () => {
+    if (!post) return;
+    setSaveEditLoading(true);
+    setSaveEditError(null);
+    try {
+      if (isExchange) {
+        const updated = await updateExchangeListingDocument(postId, {
+          title: editTitle,
+          description: editDescription,
+        });
+        if (updated) {
+          setPost(updated);
+          setEditDialogOpen(false);
+        } else {
+          setSaveEditError("Could not save. Check Appwrite permissions.");
+        }
+      } else {
+        const updated = await updatePostDocument(postId, {
+          title: editTitle,
+          smallDescription: editSmallDescription,
+          description: editDescription,
+        });
+        if (updated) {
+          setPost(updated);
+          setEditDialogOpen(false);
+        } else {
+          setSaveEditError("Could not save. Check Appwrite permissions.");
+        }
+      }
+    } catch (err) {
+      setSaveEditError(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSaveEditLoading(false);
+    }
+  };
 
   const fetchPost = useCallback(async () => {
     setLoading(true);
     try {
-      let postData: Post | ExchangeListing | null;
-
       const [data, stats] = await Promise.all([
         isExchange ? getExchangeListingById(postId) : getPostById(postId),
         fetchPostStatsApi({
@@ -87,13 +184,16 @@ export default function PostDetailPage() {
           includeReportsForPostId: postId,
         }),
       ]);
-      postData = data;
+      const postData = data;
       setLikeCount(stats.likes[postId] ?? 0);
       setReportCount(stats.reportCounts[postId] ?? 0);
       setStampCount(stats.stamps[postId] ?? 0);
       setReports(stats.reports ?? []);
 
       setPost(postData);
+      setAdminNotes(
+        String((postData as { adminNotes?: string | null }).adminNotes ?? "")
+      );
       
       if (postData?.userId) {
         const profile = await getUserByUserId(postData.userId);
@@ -139,7 +239,7 @@ export default function PostDetailPage() {
         ? await deleteExchangeListing(postId)
         : await deletePost(postId);
       if (success) {
-        router.push("/posts");
+        router.push(listReturnPath);
       }
     } catch (error) {
       console.error("Failed to delete:", error);
@@ -174,7 +274,7 @@ export default function PostDetailPage() {
         <AlertTriangle className="h-16 w-16 text-muted-foreground mb-4" />
         <h2 className="text-xl font-semibold mb-2">Post Not Found</h2>
         <p className="text-muted-foreground mb-6">Could not find the post</p>
-        <Button onClick={() => router.push("/posts")} variant="outline">
+        <Button onClick={() => router.push(listReturnPath)} variant="outline">
           <ArrowLeft className="h-4 w-4 mr-2" />
           Back to Posts
         </Button>
@@ -222,6 +322,12 @@ export default function PostDetailPage() {
     return `https://www.google.com/maps?q=${lat},${lng}`;
   };
 
+  const { views: proxyViews, clicks: proxyClicks } = postEngagementAsAdMetrics(
+    likeCount,
+    stampCount,
+    reportCount
+  );
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -230,7 +336,7 @@ export default function PostDetailPage() {
         <Button
           variant="outline"
           size="icon"
-          onClick={() => router.push("/posts")}
+          onClick={() => router.push(listReturnPath)}
           className="bg-secondary/50 border-border/50"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -255,12 +361,26 @@ export default function PostDetailPage() {
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              resetPostEdits();
+              setSaveEditError(null);
+              setEditDialogOpen(true);
+            }}
+            className="bg-secondary/50 border-border/50"
+            disabled={actionLoading || saveEditLoading}
+          >
+            <Pencil className="h-4 w-4 mr-2" />
+            Edit
+          </Button>
           {!isExchange && (
             <Button
               variant={post.isBlacklisted ? "outline" : "destructive"}
               size="sm"
               onClick={() => setBlacklistDialog(true)}
-              disabled={actionLoading}
+              disabled={actionLoading || saveEditLoading}
               className={post.isBlacklisted ? "border-green-500/50 text-green-500 hover:bg-green-500/20 hover:text-green-400" : ""}
             >
               {post.isBlacklisted ? (
@@ -280,7 +400,7 @@ export default function PostDetailPage() {
             variant="destructive"
             size="sm"
             onClick={() => setDeleteDialog(true)}
-            disabled={actionLoading}
+            disabled={actionLoading || saveEditLoading}
           >
             {actionLoading ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -421,17 +541,30 @@ export default function PostDetailPage() {
               <CardTitle className="text-lg">Statistics</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <StatRow
+              <AdStatRow
+                icon={Eye}
+                label="Views"
+                value={proxyViews}
+                color="text-blue-500"
+              />
+              <AdStatRow
+                icon={MousePointer}
+                label="Clicks"
+                value={proxyClicks}
+                color="text-green-500"
+              />
+              <AdStatRow
                 icon={Heart}
-                label="Like Count"
+                label="Likes"
                 value={likeCount}
                 color="text-pink-500"
               />
+              <AdConversionRow views={proxyViews} clicks={proxyClicks} />
               <StatRow
                 icon={Users}
                 label="Community Count"
                 value={stampCount}
-                color="text-blue-500"
+                color="text-cyan-500"
               />
               <StatRow
                 icon={AlertTriangle}
@@ -439,6 +572,25 @@ export default function PostDetailPage() {
                 value={reportCount}
                 color={reportCount > 0 ? "text-destructive" : "text-muted-foreground"}
                 highlight={reportCount > 0}
+              />
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/50 border-border/50">
+            <CardHeader>
+              <CardTitle className="text-lg">Admin notes</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Internal only. Requires Appwrite string attribute{" "}
+                <code className="text-primary">adminNotes</code> on this collection.
+              </p>
+              <AdminNotesEditor
+                contentId={postId}
+                kind={isExchange ? "exchange" : "post"}
+                initialNotes={adminNotes}
+                variant="button"
+                onSaved={setAdminNotes}
               />
             </CardContent>
           </Card>
@@ -607,6 +759,115 @@ export default function PostDetailPage() {
           </Card>
         </div>
       </div>
+
+      <Dialog
+        open={editDialogOpen}
+        onOpenChange={(open) => {
+          setEditDialogOpen(open);
+          if (!open) {
+            resetPostEdits();
+            setSaveEditError(null);
+          }
+        }}
+      >
+        <DialogContent
+          showCloseButton={!saveEditLoading}
+          className="bg-card border-border sm:max-w-2xl max-h-[85vh] overflow-y-auto gap-0 p-0"
+        >
+          <div className="p-6 pb-0">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 pr-8">
+                <Pencil className="h-5 w-5 text-primary shrink-0" />
+                {isExchange ? "Edit exchange listing" : "Edit post"}
+              </DialogTitle>
+              <DialogDescription>
+                {isExchange
+                  ? "Updates title and description on the exchange_listings document."
+                  : "Changes are saved to Appwrite and visible in the app after users refresh."}
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+          <div className="px-6 py-4 space-y-4">
+            <div className="space-y-2">
+              <label htmlFor="admin-edit-title" className="text-sm text-muted-foreground">
+                Title
+              </label>
+              <Input
+                id="admin-edit-title"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                className="bg-input/50 border-border/50"
+                disabled={saveEditLoading}
+              />
+            </div>
+            {!isExchange && (
+              <div className="space-y-2">
+                <label htmlFor="admin-edit-summary" className="text-sm text-muted-foreground">
+                  Summary
+                </label>
+                <textarea
+                  id="admin-edit-summary"
+                  value={editSmallDescription}
+                  onChange={(e) => setEditSmallDescription(e.target.value)}
+                  rows={3}
+                  disabled={saveEditLoading}
+                  className="flex w-full rounded-md border border-border/50 bg-input/50 px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 resize-y min-h-[72px] disabled:opacity-50"
+                />
+              </div>
+            )}
+            <div className="space-y-2">
+              <label htmlFor="admin-edit-desc" className="text-sm text-muted-foreground">
+                Description
+              </label>
+              <textarea
+                id="admin-edit-desc"
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                rows={8}
+                disabled={saveEditLoading}
+                className="flex w-full rounded-md border border-border/50 bg-input/50 px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 resize-y min-h-[160px] disabled:opacity-50"
+              />
+            </div>
+            {saveEditError && (
+              <p className="text-sm text-destructive">{saveEditError}</p>
+            )}
+          </div>
+          <DialogFooter className="p-6 pt-2 border-t border-border/50 bg-card">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setEditDialogOpen(false)}
+              disabled={saveEditLoading}
+              className="bg-secondary/50 border-border/50"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={resetPostEdits}
+              disabled={saveEditLoading}
+              className="bg-secondary/50 border-border/50"
+            >
+              Reset
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleSavePostEdits()}
+              disabled={saveEditLoading}
+            >
+              {saveEditLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Saving…
+                </>
+              ) : (
+                "Save changes"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Blacklist Confirmation Dialog */}
       <AlertDialog open={blacklistDialog} onOpenChange={setBlacklistDialog}>

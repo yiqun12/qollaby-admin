@@ -9,11 +9,11 @@ export const account = new Account(client);
 export const databases = new Databases(client);
 export const storage = new Storage(client);
 
-// Bucket ID for post images (adjust if different)
-export const BUCKET_ID = process.env.NEXT_PUBLIC_APPWRITE_BUCKET_ID || "posts";
-
-// Sponsor Ads Bucket ID (same as app)
+/** Main media bucket (posts, avatars, mobile uploads). Override with NEXT_PUBLIC_APPWRITE_BUCKET_ID. */
 export const SPONSOR_ADS_BUCKET_ID = "68be1b43002b9e939b2e";
+
+export const BUCKET_ID =
+  process.env.NEXT_PUBLIC_APPWRITE_BUCKET_ID || SPONSOR_ADS_BUCKET_ID;
 
 /**
  * Upload files directly to Appwrite Storage from the browser.

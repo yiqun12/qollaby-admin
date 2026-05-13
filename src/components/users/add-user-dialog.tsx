@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { ID } from "appwrite";
 import Image from "next/image";
 import {
   Dialog,
@@ -33,7 +32,6 @@ import {
   Link as LinkIcon,
 } from "lucide-react";
 import { createUser } from "@/lib/user-actions";
-import { storage, BUCKET_ID } from "@/lib/appwrite";
 import type { UserRole } from "@/types/profile.types";
 
 const USERNAME_PATTERN = /^[a-z0-9_.-]{3,32}$/;
@@ -43,26 +41,11 @@ function buildDefaultAvatar(seed: string): string {
   return `https://api.dicebear.com/9.x/initials/png?seed=${safeSeed}&backgroundColor=8b5cf6,3b82f6&textColor=ffffff`;
 }
 
-function buildAvatarUrl(fileId: string): string {
-  const endpoint = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT;
-  const projectId = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID;
-  return `${endpoint}/storage/buckets/${BUCKET_ID}/files/${fileId}/view?project=${projectId}`;
-}
-
 const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
   { value: "user", label: "User" },
   { value: "admin", label: "Admin" },
   { value: "unlimited", label: "Unlimited" },
 ];
-
-const SERVICE_OPTIONS = [
-  "Managed Client",
-  "Web Development",
-  "SEO",
-  "Marketing",
-  "Hosting",
-  "Social Media",
-] as const;
 
 interface AddUserDialogProps {
   open: boolean;
@@ -113,8 +96,18 @@ export function AddUserDialog({ open, onOpenChange, onCreated }: AddUserDialogPr
     setError(null);
     setUploadingAvatar(true);
     try {
-      const uploaded = await storage.createFile(BUCKET_ID, ID.unique(), file);
-      const url = buildAvatarUrl(uploaded.$id);
+      const formData = new FormData();
+      formData.append("files", file);
+      const res = await fetch("/api/admin/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const data = (await res.json()) as { urls?: string[]; error?: string };
+      if (!res.ok) {
+        throw new Error(data.error || "Upload failed");
+      }
+      const url = data.urls?.[0];
+      if (!url) throw new Error("No file URL returned");
       setAvatar(url);
       setAvatarPreviewError(false);
     } catch (err) {
@@ -373,29 +366,6 @@ export function AddUserDialog({ open, onOpenChange, onCreated }: AddUserDialogPr
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
-          </div>
-
-          <div className="space-y-3 pt-2">
-            <div className="flex items-center justify-between">
-              <Label className="text-muted-foreground">User Services</Label>
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted text-muted-foreground text-[10px] font-medium uppercase tracking-wide">
-                Coming soon
-              </span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 opacity-50 pointer-events-none select-none">
-              {SERVICE_OPTIONS.map((service) => (
-                <div
-                  key={service}
-                  className="flex items-center gap-2.5 px-3 py-2 rounded-md border border-border/50 bg-secondary/30 text-left"
-                >
-                  <span className="h-4 w-4 rounded border border-border bg-background flex items-center justify-center" />
-                  <span className="text-sm font-medium text-muted-foreground">{service}</span>
-                </div>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Service-based permissions are not wired up yet — selections won&apos;t be saved.
-            </p>
           </div>
 
           {error && (

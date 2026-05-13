@@ -1,15 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   getSponsorAds,
   getSponsorAdStats,
+  getSponsorAdsFieldDistribution,
   getAdMetrics,
   getAdsLikeCounts,
+  type FieldDistributionResult,
   SponsorAd,
   SponsorAdStatus,
 } from "@/lib/user-actions";
+import { ListDistributionPieChart } from "@/components/posts/list-distribution-pie";
 import { SPONSOR_ADS_BUCKET_ID, isVideoUrl } from "@/lib/appwrite";
 import { ImageThumbnail } from "@/components/ui/image-thumbnail";
 import { VideoThumbnail } from "@/components/ui/video-thumbnail";
@@ -121,6 +124,14 @@ export default function UserAdsPage() {
   // Dynamic categories
   const [dynamicCategories, setDynamicCategories] = useState<Category[]>([]);
   const [filterSubcategoriesList, setFilterSubcategoriesList] = useState<Category[]>([]);
+  const [distribution, setDistribution] = useState<FieldDistributionResult | null>(null);
+
+  const fetchDistribution = useCallback(() => {
+    void getSponsorAdsFieldDistribution({
+      isAdminCreated: false,
+      field: "category",
+    }).then(setDistribution);
+  }, []);
 
   const fetchAds = useCallback(async () => {
     setLoading(true);
@@ -166,6 +177,10 @@ export default function UserAdsPage() {
       console.log(`[ads/user] total fetchAds: ${(performance.now() - t0).toFixed(0)}ms`);
     }
   }, [page, search, statusFilter, stateFilter, cityFilter, categoryFilter, subcategoryFilter]);
+
+  useEffect(() => {
+    fetchDistribution();
+  }, [fetchDistribution]);
 
   useEffect(() => {
     fetchAds();
@@ -260,6 +275,19 @@ export default function UserAdsPage() {
     }
   };
 
+  const distributionRows = useMemo(() => {
+    if (!distribution?.slices?.length) return [];
+    const resolveCategory = (key: string) => {
+      if (key === "—") return "(No category)";
+      const c = dynamicCategories.find((x) => x.value === key);
+      return c?.name ?? key;
+    };
+    return distribution.slices.map((s) => ({
+      label: s.key === "__other__" ? s.label : resolveCategory(s.key),
+      count: s.count,
+    }));
+  }, [distribution, dynamicCategories]);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -270,7 +298,10 @@ export default function UserAdsPage() {
         children={
           <Button
             variant="outline"
-            onClick={fetchAds}
+            onClick={() => {
+              void fetchAds();
+              fetchDistribution();
+            }}
             className="bg-secondary/50 border-border/50"
           >
             <RefreshCw className="h-4 w-4 mr-2" />
@@ -279,8 +310,8 @@ export default function UserAdsPage() {
         }
       />
 
-      {/* Stats Cards - Row 1 */}
-      <div className="grid gap-4 md:grid-cols-2">
+      {/* Stats + category mix */}
+      <div className="grid gap-4 md:grid-cols-3">
         <Card className="bg-card/50 border-border/50">
           <CardContent className="pt-6">
             <div className="flex items-center gap-4">
@@ -307,6 +338,12 @@ export default function UserAdsPage() {
             </div>
           </CardContent>
         </Card>
+        <ListDistributionPieChart
+          title="Category (recent sample)"
+          rows={distributionRows}
+          totalInDatabase={distribution?.totalInDatabase ?? 0}
+          scannedCount={distribution?.scannedCount ?? 0}
+        />
       </div>
 
       {/* Stats Cards - Row 2: Metrics */}

@@ -821,6 +821,8 @@ export interface Post {
   externalLink?: string;
   // Blacklist status (admin moderation)
   isBlacklisted?: boolean;
+  /** Optional Appwrite attribute for qollaby-admin internal notes */
+  adminNotes?: string;
 }
 
 // Exchange Listing interface (separate table from posts)
@@ -846,6 +848,7 @@ export interface ExchangeListing {
   // For compatibility with Post display
   type: "exchange";
   isBlacklisted?: boolean;
+  adminNotes?: string;
 }
 
 export interface ExchangeListingListParams {
@@ -1122,6 +1125,53 @@ export async function getExchangeListingById(listingId: string): Promise<Exchang
   }
 }
 
+export type UpdatePostInput = {
+  title?: string;
+  description?: string;
+  smallDescription?: string;
+};
+
+export async function updatePostDocument(
+  postId: string,
+  patch: UpdatePostInput
+): Promise<Post | null> {
+  try {
+    const doc = await databases.updateDocument(
+      process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!,
+      Collections.POSTS,
+      postId,
+      patch
+    );
+    return doc as unknown as Post;
+  } catch (error) {
+    console.error("Error updating post:", error);
+    return null;
+  }
+}
+
+export type UpdateExchangeListingInput = {
+  title?: string;
+  description?: string;
+};
+
+export async function updateExchangeListingDocument(
+  listingId: string,
+  patch: UpdateExchangeListingInput
+): Promise<ExchangeListing | null> {
+  try {
+    const doc = await databases.updateDocument(
+      process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!,
+      Collections.EXCHANGE_LISTINGS,
+      listingId,
+      patch
+    );
+    return { ...doc, type: "exchange" as const } as unknown as ExchangeListing;
+  } catch (error) {
+    console.error("Error updating exchange listing:", error);
+    return null;
+  }
+}
+
 export async function deletePost(postId: string): Promise<boolean> {
   try {
     await databases.deleteDocument(
@@ -1185,6 +1235,130 @@ export async function getPostStats(): Promise<{
   } catch (error) {
     console.error("Error fetching post stats:", error);
     return { totalPosts: 0, recentPosts: 0 };
+  }
+}
+
+const DISTRIBUTION_SCAN_BATCH = 200;
+const DISTRIBUTION_SCAN_CAP = 3000;
+const DISTRIBUTION_MAX_SLICES = 8;
+
+export type DistributionSlice = { key: string; label: string; count: number };
+
+export type FieldDistributionResult = {
+  slices: DistributionSlice[];
+  /** Total documents matching filter in Appwrite */
+  totalInDatabase: number;
+  /** Documents read for aggregation (capped) */
+  scannedCount: number;
+};
+
+function collapseSlices(
+  slices: DistributionSlice[],
+  maxVisible: number,
+  otherLabel: string
+): DistributionSlice[] {
+  if (slices.length <= maxVisible) return slices;
+  const top = slices.slice(0, maxVisible - 1);
+  const rest = slices.slice(maxVisible - 1);
+  const otherCount = rest.reduce((s, x) => s + x.count, 0);
+  return [...top, { key: "__other__", label: otherLabel, count: otherCount }];
+}
+
+/**
+ * Category mix among the newest documents (capped scan) for admin list context.
+ */
+export async function getPostsCategoryDistribution(
+  postType: "post" | "event"
+): Promise<FieldDistributionResult> {
+  const dbId = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!;
+  const counts = new Map<string, number>();
+  let offset = 0;
+  let totalInDb = 0;
+
+  try {
+    while (offset < DISTRIBUTION_SCAN_CAP) {
+      const res = await databases.listDocuments(dbId, Collections.POSTS, [
+        Query.equal("type", postType),
+        Query.orderDesc("$createdAt"),
+        Query.limit(DISTRIBUTION_SCAN_BATCH),
+        Query.offset(offset),
+      ]);
+      if (offset === 0) totalInDb = res.total;
+      if (res.documents.length === 0) break;
+      for (const doc of res.documents) {
+        const raw = String((doc as { category?: string }).category ?? "").trim();
+        const key = raw || "—";
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+      offset += res.documents.length;
+      if (res.documents.length < DISTRIBUTION_SCAN_BATCH) break;
+    }
+
+    const slices = [...counts.entries()]
+      .map(([key, count]) => ({ key, label: key, count }))
+      .sort((a, b) => b.count - a.count);
+
+    return {
+      slices: collapseSlices(slices, DISTRIBUTION_MAX_SLICES, "Other categories"),
+      totalInDatabase: totalInDb,
+      scannedCount: offset,
+    };
+  } catch (error) {
+    console.error("Error aggregating post categories:", error);
+    return { slices: [], totalInDatabase: 0, scannedCount: 0 };
+  }
+}
+
+/**
+ * Status (or category) mix among the newest exchange listings (capped scan).
+ */
+export async function getExchangeListingsFieldDistribution(
+  field: "status" | "category" = "status"
+): Promise<FieldDistributionResult> {
+  const dbId = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!;
+  const counts = new Map<string, number>();
+  let offset = 0;
+  let totalInDb = 0;
+
+  try {
+    while (offset < DISTRIBUTION_SCAN_CAP) {
+      const res = await databases.listDocuments(
+        dbId,
+        Collections.EXCHANGE_LISTINGS,
+        [
+          Query.orderDesc("$createdAt"),
+          Query.limit(DISTRIBUTION_SCAN_BATCH),
+          Query.offset(offset),
+        ]
+      );
+      if (offset === 0) totalInDb = res.total;
+      if (res.documents.length === 0) break;
+      for (const doc of res.documents) {
+        const d = doc as { status?: string; category?: string };
+        const raw =
+          field === "category"
+            ? String(d.category ?? "").trim()
+            : String(d.status ?? "").trim();
+        const key = raw || "—";
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+      offset += res.documents.length;
+      if (res.documents.length < DISTRIBUTION_SCAN_BATCH) break;
+    }
+
+    const slices = [...counts.entries()]
+      .map(([key, count]) => ({ key, label: key, count }))
+      .sort((a, b) => b.count - a.count);
+
+    const otherLabel = field === "category" ? "Other categories" : "Other statuses";
+    return {
+      slices: collapseSlices(slices, DISTRIBUTION_MAX_SLICES, otherLabel),
+      totalInDatabase: totalInDb,
+      scannedCount: offset,
+    };
+  } catch (error) {
+    console.error("Error aggregating exchange listings:", error);
+    return { slices: [], totalInDatabase: 0, scannedCount: 0 };
   }
 }
 
@@ -1524,7 +1698,10 @@ export interface SponsorAd {
   // Contact info
   phoneNumber?: string;
   website?: string;
+  tag?: "home" | "event" | "exchange";
 }
+
+export type AdTagType = "home" | "event" | "exchange";
 
 export interface SponsorAdListParams {
   page?: number;
@@ -1549,7 +1726,7 @@ export interface SponsorAdListResult {
  * Get all admin-created ads organized by slot
  * Uses pagination to fetch all ads (Appwrite default limit can truncate results)
  */
-export async function getAdminAdsBySlot(): Promise<Map<number, SponsorAd[]>> {
+export async function getAdminAdsBySlot(tag?: AdTagType): Promise<Map<number, SponsorAd[]>> {
   try {
     const adsBySlot = new Map<number, SponsorAd[]>();
     const pageSize = 100;
@@ -1557,14 +1734,17 @@ export async function getAdminAdsBySlot(): Promise<Map<number, SponsorAd[]>> {
     let hasMore = true;
 
     while (hasMore) {
+      const queries = [
+        Query.equal("isAdminCreated", true),
+        Query.limit(pageSize),
+        Query.offset(offset),
+      ];
+      if (tag) queries.push(Query.equal("tag", tag));
+
       const adsRes = await databases.listDocuments(
         process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!,
         Collections.SPONSOR_ADS,
-        [
-          Query.equal("isAdminCreated", true),
-          Query.limit(pageSize),
-          Query.offset(offset),
-        ]
+        queries
       );
 
       for (const doc of adsRes.documents) {
@@ -1684,6 +1864,76 @@ export async function getSponsorAds(params: SponsorAdListParams = {}): Promise<S
   }
 }
 
+export type SponsorAdsDistributionParams = {
+  isAdminCreated: boolean;
+  /** Admin slot ads only: filter by placement tag */
+  tag?: AdTagType;
+  field: "category" | "status";
+};
+
+/**
+ * Category or status mix among newest sponsor ads (capped scan), scoped like list filters.
+ */
+export async function getSponsorAdsFieldDistribution(
+  params: SponsorAdsDistributionParams
+): Promise<FieldDistributionResult> {
+  const dbId = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!;
+  const { isAdminCreated, tag, field } = params;
+  const counts = new Map<string, number>();
+  let offset = 0;
+  let totalInDb = 0;
+
+  const baseQueries: string[] = [];
+  if (isAdminCreated) {
+    baseQueries.push(Query.equal("isAdminCreated", true));
+    if (tag) {
+      baseQueries.push(Query.equal("tag", tag));
+    }
+  } else {
+    baseQueries.push(
+      Query.or([Query.isNull("isAdminCreated"), Query.equal("isAdminCreated", false)])
+    );
+  }
+
+  try {
+    while (offset < DISTRIBUTION_SCAN_CAP) {
+      const res = await databases.listDocuments(dbId, Collections.SPONSOR_ADS, [
+        ...baseQueries,
+        Query.orderDesc("$createdAt"),
+        Query.limit(DISTRIBUTION_SCAN_BATCH),
+        Query.offset(offset),
+      ]);
+      if (offset === 0) totalInDb = res.total;
+      if (res.documents.length === 0) break;
+      for (const doc of res.documents) {
+        const d = doc as { category?: string; status?: string };
+        const raw =
+          field === "category"
+            ? String(d.category ?? "").trim()
+            : String(d.status ?? "").trim();
+        const key = raw || "—";
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+      offset += res.documents.length;
+      if (res.documents.length < DISTRIBUTION_SCAN_BATCH) break;
+    }
+
+    const slices = [...counts.entries()]
+      .map(([key, count]) => ({ key, label: key, count }))
+      .sort((a, b) => b.count - a.count);
+
+    const otherLabel = field === "category" ? "Other categories" : "Other statuses";
+    return {
+      slices: collapseSlices(slices, DISTRIBUTION_MAX_SLICES, otherLabel),
+      totalInDatabase: totalInDb,
+      scannedCount: offset,
+    };
+  } catch (error) {
+    console.error("Error aggregating sponsor ads distribution:", error);
+    return { slices: [], totalInDatabase: 0, scannedCount: 0 };
+  }
+}
+
 /**
  * Get sponsor ad by ID
  */
@@ -1705,7 +1955,7 @@ export async function getSponsorAdById(adId: string): Promise<SponsorAd | null> 
  * Get sponsor ads stats
  * @param isAdminCreated - undefined: all ads, true: admin ads only, false: user ads only
  */
-export async function getSponsorAdStats(isAdminCreated?: boolean): Promise<{
+export async function getSponsorAdStats(isAdminCreated?: boolean, tag?: AdTagType): Promise<{
   totalAds: number;
   activeAds: number;
   pendingAds: number;
@@ -1721,6 +1971,7 @@ export async function getSponsorAdStats(isAdminCreated?: boolean): Promise<{
         Query.equal("isAdminCreated", false)
       ]));
     }
+    if (tag) baseQueries.push(Query.equal("tag", tag));
 
     const [totalRes, activeRes, pendingRes] = await Promise.all([
       databases.listDocuments(
@@ -2024,6 +2275,7 @@ export interface UpdateSponsorAdInput {
   slot?: AdSlot;
   phoneNumber?: string;
   website?: string;
+  tag?: AdTagType;
 }
 
 export async function updateSponsorAd(
@@ -2044,6 +2296,7 @@ export async function updateSponsorAd(
     if (input.slot !== undefined) updateData.slot = input.slot - 1; // Store as slot - 1
     if (input.phoneNumber !== undefined) updateData.phoneNumber = input.phoneNumber;
     if (input.website !== undefined) updateData.website = input.website;
+    if (input.tag !== undefined) updateData.tag = input.tag;
 
     const doc = await databases.updateDocument(
       process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!,
@@ -2165,6 +2418,7 @@ export interface CreateSponsorAdInput {
   slot: AdSlot;
   phoneNumber?: string;
   website?: string;
+  tag?: AdTagType;
 }
 
 /**
@@ -2214,6 +2468,7 @@ export async function createSponsorAd(input: CreateSponsorAdInput): Promise<Spon
         isAdminCreated: true, // Mark as admin-created ad
         phoneNumber: input.phoneNumber || "",
         website: input.website || "",
+        tag: input.tag || "",
       }
     );
 

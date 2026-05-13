@@ -29,6 +29,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { AdConversionRow, AdStatRow } from "@/components/metrics/ad-stat-rows";
 import {
   ArrowLeft,
   Heart,
@@ -49,7 +50,6 @@ import {
   RefreshCw,
   XCircle,
   Megaphone,
-  TrendingUp,
   Shield,
   Phone,
   Globe,
@@ -191,7 +191,13 @@ export default function AdDetailPage() {
           <Button
             variant="outline"
             size="icon"
-            onClick={() => router.push(ad.isAdminCreated ? "/ads/admin" : "/ads/user")}
+            onClick={() =>
+              router.push(
+                ad.isAdminCreated
+                  ? `/ads/admin${ad.tag && ad.tag !== "home" ? `?tag=${ad.tag}` : ""}`
+                  : "/ads/user"
+              )
+            }
             className="bg-secondary/50 border-border/50"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -382,10 +388,15 @@ export default function AdDetailPage() {
               <CardTitle className="text-lg">Statistics</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <StatRow icon={Eye} label="Views" value={ad.views || 0} color="text-blue-500" />
-              <StatRow icon={MousePointer} label="Clicks" value={ad.clicks || 0} color="text-green-500" />
-              <StatRow icon={Heart} label="Likes" value={likeCount} color="text-pink-500" />
-              <ConversionRow views={ad.views || 0} clicks={ad.clicks || 0} />
+              <AdStatRow icon={Eye} label="Views" value={ad.views || 0} color="text-blue-500" />
+              <AdStatRow
+                icon={MousePointer}
+                label="Clicks"
+                value={ad.clicks || 0}
+                color="text-green-500"
+              />
+              <AdStatRow icon={Heart} label="Likes" value={likeCount} color="text-pink-500" />
+              <AdConversionRow views={ad.views || 0} clicks={ad.clicks || 0} />
             </CardContent>
           </Card>
 
@@ -455,25 +466,6 @@ export default function AdDetailPage() {
   );
 }
 
-interface StatRowProps {
-  icon: React.ElementType;
-  label: string;
-  value: number;
-  color?: string;
-}
-
-function StatRow({ icon: Icon, label, value, color = "text-muted-foreground" }: StatRowProps) {
-  return (
-    <div className="flex items-center justify-between py-3 border-b border-border/30 last:border-0">
-      <div className="flex items-center gap-3 text-muted-foreground">
-        <Icon className={`h-4 w-4 ${color}`} />
-        <span>{label}</span>
-      </div>
-      <span className={`text-lg font-semibold ${color}`}>{value.toLocaleString()}</span>
-    </div>
-  );
-}
-
 interface InfoRowProps {
   icon: React.ElementType;
   label: string;
@@ -493,22 +485,3 @@ function InfoRow({ icon: Icon, label, value, mono }: InfoRowProps) {
   );
 }
 
-interface ConversionRowProps {
-  views: number;
-  clicks: number;
-}
-
-function ConversionRow({ views, clicks }: ConversionRowProps) {
-  const rate = views > 0 ? (clicks / views) * 100 : 0;
-  const formattedRate = rate.toFixed(2);
-
-  return (
-    <div className="flex items-center justify-between py-3 border-b border-border/30 last:border-0">
-      <div className="flex items-center gap-3 text-muted-foreground">
-        <TrendingUp className="h-4 w-4 text-orange-500" />
-        <span>Conversion Rate</span>
-      </div>
-      <span className="text-lg font-semibold text-orange-500">{formattedRate}%</span>
-    </div>
-  );
-}
