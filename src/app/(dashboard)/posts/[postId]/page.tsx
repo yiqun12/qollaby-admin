@@ -27,7 +27,6 @@ import { getImageUrl, getVideoUrl, isVideoUrl } from "@/lib/appwrite";
 import { getAllCategories, getCategoryLabel, getSubCategoryLabel, Category } from "@/lib/category-actions";
 import { fetchPostStatsApi } from "@/lib/post-stats-client";
 import { AdConversionRow, AdStatRow } from "@/components/metrics/ad-stat-rows";
-import { postEngagementAsAdMetrics } from "@/components/posts/post-performance-metrics";
 import { AdminNotesEditor } from "@/components/posts/admin-notes-editor";
 import {
   blacklistPost,
@@ -322,11 +321,8 @@ export default function PostDetailPage() {
     return `https://www.google.com/maps?q=${lat},${lng}`;
   };
 
-  const { views: proxyViews, clicks: proxyClicks } = postEngagementAsAdMetrics(
-    likeCount,
-    stampCount,
-    reportCount
-  );
+  const contentViews = Number((post as Post | ExchangeListing).views) || 0;
+  const contentClicks = Number((post as Post | ExchangeListing).clicks) || 0;
 
   return (
     <div className="space-y-6">
@@ -544,13 +540,13 @@ export default function PostDetailPage() {
               <AdStatRow
                 icon={Eye}
                 label="Views"
-                value={proxyViews}
+                value={contentViews}
                 color="text-blue-500"
               />
               <AdStatRow
                 icon={MousePointer}
                 label="Clicks"
-                value={proxyClicks}
+                value={contentClicks}
                 color="text-green-500"
               />
               <AdStatRow
@@ -559,7 +555,7 @@ export default function PostDetailPage() {
                 value={likeCount}
                 color="text-pink-500"
               />
-              <AdConversionRow views={proxyViews} clicks={proxyClicks} />
+              <AdConversionRow views={contentViews} clicks={contentClicks} />
               <StatRow
                 icon={Users}
                 label="Community Count"

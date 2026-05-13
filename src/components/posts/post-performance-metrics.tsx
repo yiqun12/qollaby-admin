@@ -4,34 +4,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AdConversionRow, AdStatRow } from "@/components/metrics/ad-stat-rows";
 import { Eye, Heart, MousePointer } from "lucide-react";
 
-export type EngagementMetrics = {
+export type PostPerformanceMetricsProps = {
   likes: number;
-  stamps: number;
-  reports: number;
+  views: number;
+  clicks: number;
+  compact?: boolean;
 };
-
-/**
- * Posts have no sponsor_ads-style view/click counters; map engagement to the same
- * numeric shape so Statistics matches the ad detail card (Views → Clicks → Likes → Conversion).
- */
-export function postEngagementAsAdMetrics(
-  likes: number,
-  stamps: number,
-  reports: number
-): { views: number; clicks: number } {
-  const views = Math.max(likes + stamps + reports + 25, likes + stamps + 1);
-  const clicks = likes + stamps;
-  return { views, clicks };
-}
 
 export function PostPerformanceMetrics({
   likes,
-  stamps,
-  reports,
+  views,
+  clicks,
   compact = false,
-}: EngagementMetrics & { compact?: boolean }) {
-  const { views, clicks } = postEngagementAsAdMetrics(likes, stamps, reports);
-
+}: PostPerformanceMetricsProps) {
   if (compact) {
     return (
       <div className="mt-2 pt-2 border-t border-border/40">

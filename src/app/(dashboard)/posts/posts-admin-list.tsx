@@ -14,9 +14,8 @@ import {
   getPosts,
   getExchangeListings,
   getPostStats,
-  getPostsCategoryDistribution,
-  getExchangeListingsFieldDistribution,
-  type FieldDistributionResult,
+  getSponsorAdsViewAnalyticsByCategory,
+  type SponsorAdsViewCategoryAnalytics,
   Post,
   ExchangeListing,
   PostListResult,
@@ -36,6 +35,7 @@ import {
   ChevronRight,
   FileText,
   Heart,
+  Percent,
   Play,
   RefreshCw,
   Repeat,
@@ -68,9 +68,8 @@ export function PostsAdminList({ lockedType }: { lockedType: PostsAdminLockedTyp
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<ItemWithStats[]>([]);
   const [stats, setStats] = useState({ totalPosts: 0, recentPosts: 0 });
-  const [distribution, setDistribution] = useState<FieldDistributionResult | null>(
-    null
-  );
+  const [adViewAnalytics, setAdViewAnalytics] =
+    useState<SponsorAdsViewCategoryAnalytics | null>(null);
   const [page, setPage] = useState(() => Number(searchParams.get("page")) || 1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
@@ -103,16 +102,13 @@ export function PostsAdminList({ lockedType }: { lockedType: PostsAdminLockedTyp
         ? "/posts/events"
         : "/posts/exchange";
 
-  const fetchDistribution = useCallback(() => {
-    void (lockedType === "exchange"
-      ? getExchangeListingsFieldDistribution("status")
-      : getPostsCategoryDistribution(lockedType)
-    ).then(setDistribution);
-  }, [lockedType]);
+  const fetchAdViewAnalytics = useCallback(() => {
+    void getSponsorAdsViewAnalyticsByCategory().then(setAdViewAnalytics);
+  }, []);
 
   useEffect(() => {
-    fetchDistribution();
-  }, [fetchDistribution]);
+    fetchAdViewAnalytics();
+  }, [fetchAdViewAnalytics]);
 
   const fetchItems = useCallback(async () => {
     console.log("[PostsPage] fetchItems called with filters:", {
@@ -349,34 +345,20 @@ export function PostsAdminList({ lockedType }: { lockedType: PostsAdminLockedTyp
     fetchItems();
   };
 
-  const distributionPieTitle =
-    lockedType === "exchange"
-      ? "Status (recent sample)"
-      : "Category (recent sample)";
+  const distributionPieTitle = "Ad views by category (recent sample)";
 
   const distributionRows = useMemo(() => {
-    if (!distribution?.slices?.length) return [];
+    if (!adViewAnalytics?.slices?.length) return [];
     const resolveCategory = (key: string) => {
       if (key === "—") return "(No category)";
       const c = dynamicCategories.find((x) => x.value === key);
       return c?.name ?? key;
     };
-    if (lockedType === "exchange") {
-      return distribution.slices.map((s) => ({
-        label:
-          s.key === "__other__"
-            ? s.label
-            : s.key === "—"
-              ? "(No status)"
-              : s.label.replace(/_/g, " ").replace(/\b\w/g, (ch) => ch.toUpperCase()),
-        count: s.count,
-      }));
-    }
-    return distribution.slices.map((s) => ({
+    return adViewAnalytics.slices.map((s) => ({
       label: s.key === "__other__" ? s.label : resolveCategory(s.key),
       count: s.count,
     }));
-  }, [distribution, lockedType, dynamicCategories]);
+  }, [adViewAnalytics, dynamicCategories]);
 
   const pageTitle =
     lockedType === "event"
@@ -407,7 +389,7 @@ export function PostsAdminList({ lockedType }: { lockedType: PostsAdminLockedTyp
             onClick={() => {
               fetchItems();
               fetchStats();
-              fetchDistribution();
+              fetchAdViewAnalytics();
             }}
             className="w-fit"
           >
@@ -417,8 +399,8 @@ export function PostsAdminList({ lockedType }: { lockedType: PostsAdminLockedTyp
         }
       />
 
-      {/* Stats + pie */}
-      <div className="grid gap-4 md:grid-cols-3">
+      {/* Stats + ad view pie + conversion */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card className="bg-card/50 border-border/50">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -443,11 +425,34 @@ export function PostsAdminList({ lockedType }: { lockedType: PostsAdminLockedTyp
             <p className="text-xs text-muted-foreground mt-1">New post + event</p>
           </CardContent>
         </Card>
+        <Card className="bg-card/50 border-border/50">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Ad conversion (sample)
+            </CardTitle>
+            <Percent className="h-4 w-4 text-orange-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-orange-500 tabular-nums">
+              {adViewAnalytics
+                ? `${adViewAnalytics.conversionRatePct.toFixed(2)}%`
+                : "—"}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {adViewAnalytics
+                ? `${adViewAnalytics.totalClicks.toLocaleString()} clicks / ${adViewAnalytics.totalViews.toLocaleString()} views`
+                : "Sponsor ads scan"}
+            </p>
+            <p className="text-xs text-muted-foreground/80 mt-0.5">
+              Same newest-{adViewAnalytics?.scannedCount?.toLocaleString() ?? "—"} ads as pie
+            </p>
+          </CardContent>
+        </Card>
         <ListDistributionPieChart
           title={distributionPieTitle}
           rows={distributionRows}
-          totalInDatabase={distribution?.totalInDatabase ?? 0}
-          scannedCount={distribution?.scannedCount ?? 0}
+          totalInDatabase={adViewAnalytics?.totalInDatabase ?? 0}
+          scannedCount={adViewAnalytics?.scannedCount ?? 0}
         />
       </div>
 
@@ -799,8 +804,8 @@ function PostCard({
           <PostPerformanceMetrics
             compact
             likes={post.computedLikeCount}
-            stamps={post.computedStampCount}
-            reports={post.computedReportCount}
+            views={Number((post as PostOrExchange).views) || 0}
+            clicks={Number((post as PostOrExchange).clicks) || 0}
           />
           <div className="flex justify-end">
             <AdminNotesEditor

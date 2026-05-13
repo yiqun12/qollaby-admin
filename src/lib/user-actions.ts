@@ -823,6 +823,10 @@ export interface Post {
   isBlacklisted?: boolean;
   /** Optional Appwrite attribute for qollaby-admin internal notes */
   adminNotes?: string;
+  /** Denormalized from post_views (mobile app analytics) */
+  views?: number;
+  /** Denormalized from post_clicks */
+  clicks?: number;
 }
 
 // Exchange Listing interface (separate table from posts)
@@ -849,6 +853,8 @@ export interface ExchangeListing {
   type: "exchange";
   isBlacklisted?: boolean;
   adminNotes?: string;
+  views?: number;
+  clicks?: number;
 }
 
 export interface ExchangeListingListParams {
@@ -1359,6 +1365,77 @@ export async function getExchangeListingsFieldDistribution(
   } catch (error) {
     console.error("Error aggregating exchange listings:", error);
     return { slices: [], totalInDatabase: 0, scannedCount: 0 };
+  }
+}
+
+/** Sponsor ads: views summed by category + aggregate CTR over the same scanned sample (posts admin pie). */
+export type SponsorAdsViewCategoryAnalytics = FieldDistributionResult & {
+  totalViews: number;
+  totalClicks: number;
+  /** clicks / views * 100 over scanned ads */
+  conversionRatePct: number;
+};
+
+/**
+ * Newest sponsor ads (capped scan): pie slices = sum of `views` per category;
+ * totals used for aggregate conversion (clicks/views) on the same sample.
+ */
+export async function getSponsorAdsViewAnalyticsByCategory(): Promise<SponsorAdsViewCategoryAnalytics> {
+  const dbId = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!;
+  const viewByCategory = new Map<string, number>();
+  let offset = 0;
+  let totalInDb = 0;
+  let totalViews = 0;
+  let totalClicks = 0;
+
+  try {
+    while (offset < DISTRIBUTION_SCAN_CAP) {
+      const res = await databases.listDocuments(dbId, Collections.SPONSOR_ADS, [
+        Query.orderDesc("$createdAt"),
+        Query.limit(DISTRIBUTION_SCAN_BATCH),
+        Query.offset(offset),
+      ]);
+      if (offset === 0) totalInDb = res.total;
+      if (res.documents.length === 0) break;
+      for (const doc of res.documents) {
+        const d = doc as { category?: string; views?: number; clicks?: number };
+        const raw = String(d.category ?? "").trim();
+        const key = raw || "—";
+        const v = Number(d.views) || 0;
+        const c = Number(d.clicks) || 0;
+        viewByCategory.set(key, (viewByCategory.get(key) ?? 0) + v);
+        totalViews += v;
+        totalClicks += c;
+      }
+      offset += res.documents.length;
+      if (res.documents.length < DISTRIBUTION_SCAN_BATCH) break;
+    }
+
+    const slices = [...viewByCategory.entries()]
+      .map(([key, count]) => ({ key, label: key, count }))
+      .sort((a, b) => b.count - a.count);
+
+    const conversionRatePct =
+      totalViews > 0 ? (totalClicks / totalViews) * 100 : 0;
+
+    return {
+      slices: collapseSlices(slices, DISTRIBUTION_MAX_SLICES, "Other categories"),
+      totalInDatabase: totalInDb,
+      scannedCount: offset,
+      totalViews,
+      totalClicks,
+      conversionRatePct,
+    };
+  } catch (error) {
+    console.error("Error aggregating sponsor ad views by category:", error);
+    return {
+      slices: [],
+      totalInDatabase: 0,
+      scannedCount: 0,
+      totalViews: 0,
+      totalClicks: 0,
+      conversionRatePct: 0,
+    };
   }
 }
 
