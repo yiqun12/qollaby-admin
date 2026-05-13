@@ -34,6 +34,13 @@ function sliceColor(i: number, n: number) {
   return `hsl(${hue} 62% 48%)`;
 }
 
+/** Consistent colors for the standard Views vs Clicks two-slice pie. */
+function sliceFillForRow(row: ListPieRow, i: number, n: number) {
+  if (n === 2 && row.label === "Views") return "hsl(217 85% 52%)";
+  if (n === 2 && row.label === "Clicks") return "hsl(152 65% 42%)";
+  return sliceColor(i, n);
+}
+
 export function ListDistributionPieChart({
   title,
   rows,
@@ -58,7 +65,7 @@ export function ListDistributionPieChart({
           angle = end;
           return {
             path: arcPath(cx, cy, r, start, end),
-            color: sliceColor(i, rows.length),
+            color: sliceFillForRow(row, i, rows.length),
           };
         });
 
@@ -112,7 +119,7 @@ export function ListDistributionPieChart({
                   <div className="flex items-center gap-2 min-w-0">
                     <span
                       className="h-3 w-3 rounded-sm shrink-0"
-                      style={{ backgroundColor: sliceColor(i, rows.length) }}
+                      style={{ backgroundColor: sliceFillForRow(row, i, rows.length) }}
                     />
                     <span className="truncate text-foreground" title={row.label}>
                       {row.label}

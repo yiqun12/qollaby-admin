@@ -13,9 +13,9 @@ import { calculateDistance, formatDistance, RadiusOption } from "@/lib/geo-utils
 import {
   getPosts,
   getExchangeListings,
-  getPostStats,
-  getSponsorAdsViewAnalyticsByCategory,
-  type SponsorAdsViewCategoryAnalytics,
+  getPostsAdminDashboardMetrics,
+  getExchangeAdminDashboardMetrics,
+  type ContentAdminDashboardMetrics,
   Post,
   ExchangeListing,
   PostListResult,
@@ -23,24 +23,25 @@ import {
 } from "@/lib/user-actions";
 import { fetchPostStatsApi } from "@/lib/post-stats-client";
 import { ListDistributionPieChart } from "@/components/posts/list-distribution-pie";
-import { PostPerformanceMetrics } from "@/components/posts/post-performance-metrics";
-import { AdminNotesEditor } from "@/components/posts/admin-notes-editor";
 import { getCategories, getSubcategories, Category } from "@/lib/category-actions";
 import { getStateFullName } from "@/lib/utils";
 import {
   AlertTriangle,
   Ban,
   Calendar,
+  CheckCircle,
   ChevronLeft,
   ChevronRight,
+  Eye,
   FileText,
   Heart,
-  Percent,
+  MousePointer,
   Play,
   RefreshCw,
   Repeat,
   Search,
-  StickyNote,
+  ShoppingBag,
+  TimerOff,
   TrendingUp,
   Users,
   X,
@@ -67,9 +68,8 @@ export function PostsAdminList({ lockedType }: { lockedType: PostsAdminLockedTyp
 
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<ItemWithStats[]>([]);
-  const [stats, setStats] = useState({ totalPosts: 0, recentPosts: 0 });
-  const [adViewAnalytics, setAdViewAnalytics] =
-    useState<SponsorAdsViewCategoryAnalytics | null>(null);
+  const [dashboardMetrics, setDashboardMetrics] =
+    useState<ContentAdminDashboardMetrics | null>(null);
   const [page, setPage] = useState(() => Number(searchParams.get("page")) || 1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
@@ -102,13 +102,16 @@ export function PostsAdminList({ lockedType }: { lockedType: PostsAdminLockedTyp
         ? "/posts/events"
         : "/posts/exchange";
 
-  const fetchAdViewAnalytics = useCallback(() => {
-    void getSponsorAdsViewAnalyticsByCategory().then(setAdViewAnalytics);
-  }, []);
+  const fetchDashboardMetrics = useCallback(() => {
+    void (lockedType === "exchange"
+      ? getExchangeAdminDashboardMetrics()
+      : getPostsAdminDashboardMetrics(lockedType)
+    ).then(setDashboardMetrics);
+  }, [lockedType]);
 
   useEffect(() => {
-    fetchAdViewAnalytics();
-  }, [fetchAdViewAnalytics]);
+    fetchDashboardMetrics();
+  }, [fetchDashboardMetrics]);
 
   const fetchItems = useCallback(async () => {
     console.log("[PostsPage] fetchItems called with filters:", {
@@ -213,24 +216,11 @@ export function PostsAdminList({ lockedType }: { lockedType: PostsAdminLockedTyp
     }
   }, [page, search, lockedType, stateFilter, cityFilter, categoryFilter, subcategoryFilter]);
 
-  const fetchStats = useCallback(async () => {
-    try {
-      const statsData = await getPostStats();
-      setStats(statsData);
-    } catch (error) {
-      console.error("Failed to fetch stats:", error);
-    }
-  }, []);
-
   useEffect(() => {
     fetchItems();
     // Scroll to top when page changes
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [fetchItems]);
-
-  useEffect(() => {
-    fetchStats();
-  }, [fetchStats]);
 
   useEffect(() => {
     setPage(1);
@@ -345,20 +335,34 @@ export function PostsAdminList({ lockedType }: { lockedType: PostsAdminLockedTyp
     fetchItems();
   };
 
-  const distributionPieTitle = "Ad views by category (recent sample)";
+  const viewClickPieRows = useMemo(() => {
+    const v = dashboardMetrics?.sampleViewsSum ?? 0;
+    const c = dashboardMetrics?.sampleClicksSum ?? 0;
+    return [
+      { label: "Views", count: v },
+      { label: "Clicks", count: c },
+    ];
+  }, [dashboardMetrics]);
 
-  const distributionRows = useMemo(() => {
-    if (!adViewAnalytics?.slices?.length) return [];
-    const resolveCategory = (key: string) => {
-      if (key === "—") return "(No category)";
-      const c = dynamicCategories.find((x) => x.value === key);
-      return c?.name ?? key;
-    };
-    return adViewAnalytics.slices.map((s) => ({
-      label: s.key === "__other__" ? s.label : resolveCategory(s.key),
-      count: s.count,
-    }));
-  }, [adViewAnalytics, dynamicCategories]);
+  const sampleCtr = useMemo(() => {
+    const v = dashboardMetrics?.sampleViewsSum ?? 0;
+    if (v <= 0) return 0;
+    return ((dashboardMetrics?.sampleClicksSum ?? 0) / v) * 100;
+  }, [dashboardMetrics]);
+
+  const totalLabel =
+    lockedType === "exchange"
+      ? "Total Listings"
+      : lockedType === "event"
+        ? "Total Events"
+        : "Total Posts";
+  const activeLabel =
+    lockedType === "exchange"
+      ? "Active Listings"
+      : lockedType === "event"
+        ? "Active Events"
+        : "Active Posts";
+  const TotalIcon = lockedType === "exchange" ? Repeat : lockedType === "event" ? Calendar : FileText;
 
   const pageTitle =
     lockedType === "event"
@@ -388,8 +392,7 @@ export function PostsAdminList({ lockedType }: { lockedType: PostsAdminLockedTyp
             size="sm"
             onClick={() => {
               fetchItems();
-              fetchStats();
-              fetchAdViewAnalytics();
+              fetchDashboardMetrics();
             }}
             className="w-fit"
           >
@@ -399,62 +402,150 @@ export function PostsAdminList({ lockedType }: { lockedType: PostsAdminLockedTyp
         }
       />
 
-      {/* Stats + ad view pie + conversion */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {/* Dashboard metrics — rows 1–2 match Admin Ads; row 3 is exchange status totals */}
+      <div className="grid gap-4 md:grid-cols-3">
         <Card className="bg-card/50 border-border/50">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total Posts
-            </CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.totalPosts}</div>
-            <p className="text-xs text-muted-foreground mt-1">Post + event rows</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-card/50 border-border/50">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Last 7 Days
-            </CardTitle>
-            <TrendingUp className="h-4 w-4 text-accent" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-accent">{stats.recentPosts}</div>
-            <p className="text-xs text-muted-foreground mt-1">New post + event</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-card/50 border-border/50">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Ad conversion (sample)
-            </CardTitle>
-            <Percent className="h-4 w-4 text-orange-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-orange-500 tabular-nums">
-              {adViewAnalytics
-                ? `${adViewAnalytics.conversionRatePct.toFixed(2)}%`
-                : "—"}
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-lg bg-primary/10">
+                <TotalIcon className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">{totalLabel}</p>
+                <p className="text-2xl font-bold">
+                  {dashboardMetrics?.totalInDatabase?.toLocaleString() ?? "—"}
+                </p>
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {adViewAnalytics
-                ? `${adViewAnalytics.totalClicks.toLocaleString()} clicks / ${adViewAnalytics.totalViews.toLocaleString()} views`
-                : "Sponsor ads scan"}
-            </p>
-            <p className="text-xs text-muted-foreground/80 mt-0.5">
-              Same newest-{adViewAnalytics?.scannedCount?.toLocaleString() ?? "—"} ads as pie
-            </p>
+          </CardContent>
+        </Card>
+        <Card className="bg-card/50 border-border/50">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-lg bg-green-500/10">
+                <CheckCircle className="h-6 w-6 text-green-500" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">{activeLabel}</p>
+                <p className="text-2xl font-bold">
+                  {dashboardMetrics?.activeInDatabase?.toLocaleString() ?? "—"}
+                </p>
+              </div>
+            </div>
           </CardContent>
         </Card>
         <ListDistributionPieChart
-          title={distributionPieTitle}
-          rows={distributionRows}
-          totalInDatabase={adViewAnalytics?.totalInDatabase ?? 0}
-          scannedCount={adViewAnalytics?.scannedCount ?? 0}
+          title="Clicks vs views (recent sample)"
+          rows={viewClickPieRows}
+          totalInDatabase={dashboardMetrics?.totalInDatabase ?? 0}
+          scannedCount={dashboardMetrics?.scannedCount ?? 0}
         />
       </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className="bg-card/50 border-border/50">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-lg bg-blue-500/10">
+                <Eye className="h-6 w-6 text-blue-500" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Total Views</p>
+                <p className="text-2xl font-bold">
+                  {(dashboardMetrics?.sampleViewsSum ?? 0).toLocaleString()}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-card/50 border-border/50">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-lg bg-purple-500/10">
+                <MousePointer className="h-6 w-6 text-purple-500" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Total Clicks</p>
+                <p className="text-2xl font-bold">
+                  {(dashboardMetrics?.sampleClicksSum ?? 0).toLocaleString()}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-card/50 border-border/50">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-lg bg-amber-500/10">
+                <TrendingUp className="h-6 w-6 text-amber-500" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">CTR</p>
+                <p className="text-2xl font-bold">{sampleCtr.toFixed(1)}%</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {lockedType === "exchange" ? (
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card className="bg-card/50 border-border/50">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-4">
+                <div className="p-3 rounded-lg bg-emerald-500/10">
+                  <CheckCircle className="h-6 w-6 text-emerald-500" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Active</p>
+                  <p className="text-2xl font-bold">
+                    {dashboardMetrics?.exchangeStatusCounts != null
+                      ? dashboardMetrics.exchangeStatusCounts.active.toLocaleString()
+                      : "—"}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="bg-card/50 border-border/50">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-4">
+                <div className="p-3 rounded-lg bg-zinc-500/15">
+                  <TimerOff className="h-6 w-6 text-zinc-400" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">
+                    Expired{" "}
+                    <span className="text-muted-foreground/70 font-normal">(incl. auction)</span>
+                  </p>
+                  <p className="text-2xl font-bold">
+                    {dashboardMetrics?.exchangeStatusCounts != null
+                      ? dashboardMetrics.exchangeStatusCounts.expired.toLocaleString()
+                      : "—"}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="bg-card/50 border-border/50">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-4">
+                <div className="p-3 rounded-lg bg-sky-500/10">
+                  <ShoppingBag className="h-6 w-6 text-sky-500" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Sold</p>
+                  <p className="text-2xl font-bold">
+                    {dashboardMetrics?.exchangeStatusCounts != null
+                      ? dashboardMetrics.exchangeStatusCounts.sold.toLocaleString()
+                      : "—"}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      ) : null}
 
       {/* Search and Filters */}
       <Card className="bg-card/50 border-border/50">
@@ -559,7 +650,7 @@ export function PostsAdminList({ lockedType }: { lockedType: PostsAdminLockedTyp
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
               {[...Array(10)].map((_, i) => (
                 <div key={i} className="space-y-2">
-                  <Skeleton className="aspect-square rounded-lg" />
+                  <Skeleton className="aspect-[3/4] rounded-xl" />
                   <Skeleton className="h-4 w-3/4" />
                 </div>
               ))}
@@ -579,7 +670,6 @@ export function PostsAdminList({ lockedType }: { lockedType: PostsAdminLockedTyp
                 <PostCard
                   key={item.$id}
                   post={item}
-                  notesKind={lockedType === "exchange" ? "exchange" : "post"}
                   onClick={() =>
                     router.push(
                       lockedType === "exchange"
@@ -633,34 +723,33 @@ export function PostsAdminList({ lockedType }: { lockedType: PostsAdminLockedTyp
 
 interface PostCardProps {
   post: ItemWithStats;
-  notesKind: "post" | "exchange";
   onClick: () => void;
   showDistance?: boolean;
 }
 
-function PostCard({
-  post,
-  notesKind,
-  onClick,
-  showDistance = false,
-}: PostCardProps) {
+function PostCard({ post, onClick, showDistance = false }: PostCardProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isHovering, setIsHovering] = useState(false);
-  const [localNotes, setLocalNotes] = useState(post.adminNotes ?? "");
+
+  const views = Number((post as PostOrExchange).views) || 0;
+  const clicks = Number((post as PostOrExchange).clicks) || 0;
+  const ctrPct = views > 0 ? (clicks / views) * 100 : 0;
 
   // Use `media` field (correct field name from database)
   const firstMedia = post.media?.[0] || null;
   const isVideo = firstMedia ? isVideoUrl(firstMedia) : false;
-  
+
   // Get the appropriate URL
-  const mediaUrl = firstMedia 
-    ? (isVideo ? getVideoUrl(firstMedia) : getImageUrl(firstMedia, 400, 400))
+  const mediaUrl = firstMedia
+    ? isVideo
+      ? getVideoUrl(firstMedia)
+      : getImageUrl(firstMedia, 400, 533)
     : null;
 
   // Handle hover for video preview
   useEffect(() => {
     if (!videoRef.current || !isVideo) return;
-    
+
     if (isHovering) {
       videoRef.current.play().catch(() => {});
     } else {
@@ -674,14 +763,13 @@ function PostCard({
       onClick={onClick}
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
-      className={`group cursor-pointer rounded-lg overflow-hidden border bg-card/50 hover:shadow-lg transition-all ${
-        post.isBlacklisted 
-          ? "border-red-500/50 bg-red-950/10 hover:border-red-500/70" 
+      className={`group cursor-pointer rounded-xl overflow-hidden border bg-card/50 hover:shadow-lg transition-all hover:scale-[1.01] hover:z-10 ${
+        post.isBlacklisted
+          ? "border-red-500/50 bg-red-950/10 hover:border-red-500/70"
           : "border-border/50 hover:border-primary/30"
       }`}
     >
-      {/* Media */}
-      <div className="aspect-square bg-secondary/30 relative overflow-hidden">
+      <div className="relative aspect-[3/4] bg-secondary/30 overflow-hidden">
         {mediaUrl ? (
           isVideo ? (
             <>
@@ -694,14 +782,12 @@ function PostCard({
                 playsInline
                 preload="metadata"
               />
-              {/* Video indicator badge */}
               <div className="absolute top-2 right-2 px-2 py-1 rounded bg-black/60 text-white text-xs font-medium flex items-center gap-1 z-10">
                 <Play className="w-3 h-3" />
                 Video
               </div>
-              {/* Play icon overlay when not hovering */}
               {!isHovering && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none">
                   <div className="w-12 h-12 rounded-full bg-black/60 flex items-center justify-center">
                     <Play className="w-6 h-6 text-white ml-0.5" />
                   </div>
@@ -720,100 +806,80 @@ function PostCard({
             <FileText className="h-8 w-8 text-muted-foreground/50" />
           </div>
         )}
-        
-        {/* Badges (top right) */}
-        <div className="absolute top-2 right-2 flex flex-col gap-1 z-10">
-          {/* Blacklisted badge */}
+
+        {/* Type label — top-left, same family as admin ad slot pill */}
+        {post.type === "event" && (
+          <div className="absolute top-2 left-2 z-10 px-2 py-1 rounded-md bg-black/70 text-white text-xs font-medium flex items-center gap-1 shadow">
+            <Calendar className="w-3 h-3" />
+            Event
+          </div>
+        )}
+        {post.type === "exchange" && (
+          <div className="absolute top-2 left-2 z-10 px-2 py-1 rounded-md bg-black/70 text-white text-xs font-medium flex items-center gap-1 shadow">
+            <Repeat className="w-3 h-3" />
+            Exchange
+          </div>
+        )}
+
+        <div className="absolute top-2 right-2 flex flex-col gap-1 items-end z-10">
           {post.isBlacklisted && (
             <div className="px-2 py-1 rounded bg-red-600/90 text-white text-xs font-medium flex items-center gap-1">
               <Ban className="w-3 h-3" />
               Blocked
             </div>
           )}
-          {/* Event badge */}
-          {post.type === "event" && !isVideo && (
-            <div className="px-2 py-1 rounded bg-orange-500/90 text-white text-xs font-medium flex items-center gap-1">
-              <Calendar className="w-3 h-3" />
-              Event
-            </div>
-          )}
-          {/* Exchange badge */}
-          {post.type === "exchange" && !isVideo && (
-            <div className="px-2 py-1 rounded bg-purple-500/90 text-white text-xs font-medium flex items-center gap-1">
-              <Repeat className="w-3 h-3" />
-              Exchange
-            </div>
-          )}
         </div>
-        
-        {/* Overlay with stats on hover (for images) */}
-        {!isVideo && (
-          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-            <div className="flex gap-4 text-white text-sm">
-              <div className="flex items-center gap-1">
-                <Heart className="h-4 w-4" />
-                <span>{post.computedLikeCount}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <Users className="h-4 w-4" />
-                <span>{post.computedStampCount}</span>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-      
-      {/* Title and stats bar */}
-      <div className="p-2">
-        <div className="flex items-start gap-1 mb-1">
-          <p className="text-sm font-medium truncate flex-1 min-w-0">{post.title || "Untitled"}</p>
-          {localNotes.trim().length > 0 && (
-            <StickyNote className="h-3.5 w-3.5 shrink-0 text-amber-500/90" aria-hidden />
-          )}
-        </div>
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <div className="flex items-center gap-2">
+
+        {/* Bottom metrics — match admin ad slots strip */}
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-2 pb-2 pt-6 pointer-events-none">
+          <div className="flex items-center justify-between text-[11px] text-white/90 tabular-nums">
             <span className="flex items-center gap-1">
-              <Heart className="h-3 w-3" />
+              <Eye className="h-3 w-3 shrink-0" />
+              {views.toLocaleString()}
+            </span>
+            <span className="flex items-center gap-1">
+              <MousePointer className="h-3 w-3 shrink-0" />
+              {clicks.toLocaleString()}
+            </span>
+            <span className="flex items-center gap-1">
+              <TrendingUp className="h-3 w-3 shrink-0" />
+              {ctrPct.toFixed(1)}%
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="p-2 space-y-1.5">
+        <p className="text-sm font-medium truncate">{post.title || "Untitled"}</p>
+
+        {/* Fig.3 style row: likes + stamps left, reports right (always show reports) */}
+        <div className="flex items-center justify-between text-xs">
+          <div className="flex items-center gap-3 text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <Heart className="h-3.5 w-3.5" />
               {post.computedLikeCount}
             </span>
             <span className="flex items-center gap-1">
-              <Users className="h-3 w-3" />
+              <Users className="h-3.5 w-3.5" />
               {post.computedStampCount}
             </span>
           </div>
-          <div className="flex items-center gap-2">
-            {/* Distance badge */}
-            {showDistance && post.computedDistance !== undefined && post.computedDistance !== Infinity && (
-              <span className="flex items-center gap-0.5 text-primary font-medium">
-                📍 {formatDistance(post.computedDistance)}
-              </span>
-            )}
-            {post.computedReportCount > 0 && (
-              <span className="flex items-center gap-1 text-destructive">
-                <AlertTriangle className="h-3 w-3" />
-                {post.computedReportCount}
-              </span>
-            )}
-          </div>
-        </div>
-        <div
-          className="mt-2 pt-2 border-t border-border/40 space-y-2"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <PostPerformanceMetrics
-            compact
-            likes={post.computedLikeCount}
-            views={Number((post as PostOrExchange).views) || 0}
-            clicks={Number((post as PostOrExchange).clicks) || 0}
-          />
-          <div className="flex justify-end">
-            <AdminNotesEditor
-              contentId={post.$id}
-              kind={notesKind}
-              initialNotes={localNotes}
-              onSaved={setLocalNotes}
-            />
+          <div className="flex items-center gap-3 shrink-0">
+            {showDistance &&
+              post.computedDistance !== undefined &&
+              post.computedDistance !== Infinity && (
+                <span className="flex items-center gap-0.5 text-primary font-medium">
+                  📍 {formatDistance(post.computedDistance)}
+                </span>
+              )}
+            <span
+              className={`flex items-center gap-1 tabular-nums ${
+                post.computedReportCount > 0 ? "text-red-500" : "text-muted-foreground"
+              }`}
+            >
+              <AlertTriangle className="h-3.5 w-3.5" />
+              {post.computedReportCount}
+            </span>
           </div>
         </div>
       </div>

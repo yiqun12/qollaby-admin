@@ -43,6 +43,9 @@ import {
     getSlotUsageCounts,
     getSlotMaxUsage,
     getSponsorAdStats,
+    getAdsLikeCounts,
+    getAdsReportCounts,
+    getPostStampsByPostIds,
     type FieldDistributionResult,
     SlotUsageInfo,
     SponsorAd,
@@ -51,8 +54,11 @@ import {
 import { ListDistributionPieChart } from "@/components/posts/list-distribution-pie";
 import { getStateFullName } from "@/lib/utils";
 import {
+    AlertTriangle,
+    Ban,
     CheckCircle,
     Eye,
+    Heart,
     Loader2,
     Megaphone,
     MousePointer,
@@ -62,6 +68,7 @@ import {
     Shield,
     TrendingUp,
     Trash2,
+    Users,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -128,6 +135,9 @@ export function AdminAdsPanel({ tag, title, description, headerIcon: HeaderIcon 
   const { admin } = useAuth();
   const [loading, setLoading] = useState(true);
   const [adminAdsBySlot, setAdminAdsBySlot] = useState<Map<number, SponsorAd[]>>(new Map());
+  const [adEngagementById, setAdEngagementById] = useState<
+    Record<string, { likes: number; stamps: number; reports: number }>
+  >({});
   const [stats, setStats] = useState({ totalAds: 0, activeAds: 0, pendingAds: 0 });
 
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -182,6 +192,30 @@ export function AdminAdsPanel({ tag, title, description, headerIcon: HeaderIcon 
       ]);
       setAdminAdsBySlot(adminAdsMap);
       setStats(statsData);
+
+      const idSet = new Set<string>();
+      adminAdsMap.forEach((list) => {
+        list.forEach((ad) => idSet.add(ad.$id));
+      });
+      const allIds = [...idSet];
+      if (allIds.length > 0) {
+        const [likesMap, stampsMap, reportsMap] = await Promise.all([
+          getAdsLikeCounts(allIds),
+          getPostStampsByPostIds(allIds),
+          getAdsReportCounts(allIds),
+        ]);
+        const next: Record<string, { likes: number; stamps: number; reports: number }> = {};
+        for (const id of allIds) {
+          next[id] = {
+            likes: likesMap.get(id) ?? 0,
+            stamps: stampsMap.get(id) ?? 0,
+            reports: reportsMap.get(id) ?? 0,
+          };
+        }
+        setAdEngagementById(next);
+      } else {
+        setAdEngagementById({});
+      }
     } catch (error) {
       console.error("Failed to fetch ads:", error);
     } finally {
@@ -494,18 +528,14 @@ export function AdminAdsPanel({ tag, title, description, headerIcon: HeaderIcon 
     return { totalViews, totalClicks, ctr };
   })();
 
-  const distributionRows = useMemo(() => {
-    if (!distribution?.slices?.length) return [];
-    const resolveCategory = (key: string) => {
-      if (key === "—") return "(No category)";
-      const c = dynamicCategories.find((x) => x.value === key);
-      return c?.name ?? key;
-    };
-    return distribution.slices.map((s) => ({
-      label: s.key === "__other__" ? s.label : resolveCategory(s.key),
-      count: s.count,
-    }));
-  }, [distribution, dynamicCategories]);
+  const viewClickPieRows = useMemo(() => {
+    const v = distribution?.sampleViewsSum ?? 0;
+    const c = distribution?.sampleClicksSum ?? 0;
+    return [
+      { label: "Views", count: v },
+      { label: "Clicks", count: c },
+    ];
+  }, [distribution]);
 
   return (
     <div className="space-y-6">
@@ -556,8 +586,8 @@ export function AdminAdsPanel({ tag, title, description, headerIcon: HeaderIcon 
           </CardContent>
         </Card>
         <ListDistributionPieChart
-          title="Category (recent sample)"
-          rows={distributionRows}
+          title="Clicks vs views (recent sample)"
+          rows={viewClickPieRows}
           totalInDatabase={distribution?.totalInDatabase ?? 0}
           scannedCount={distribution?.scannedCount ?? 0}
         />
@@ -619,7 +649,17 @@ export function AdminAdsPanel({ tag, title, description, headerIcon: HeaderIcon 
           {loading ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
               {[...Array(36)].map((_, i) => (
-                <Skeleton key={i} className="aspect-[3/4] rounded-xl" />
+                <div
+                  key={i}
+                  className="flex flex-col rounded-xl overflow-hidden border border-border/40 bg-card/30"
+                >
+                  <Skeleton className="aspect-[3/4] w-full shrink-0 rounded-none" />
+                  <div className="p-2 space-y-2 border-t border-border/30">
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-3 w-2/3" />
+                    <Skeleton className="h-3 w-full" />
+                  </div>
+                </div>
               ))}
             </div>
           ) : (
@@ -658,6 +698,9 @@ export function AdminAdsPanel({ tag, title, description, headerIcon: HeaderIcon 
                   const label = (MULTI_USE_SLOTS as readonly number[]).includes(displaySlot)
                     ? `${displaySlot}-${subIndex + 1}`
                     : `${displaySlot}`;
+                  const eng = ad
+                    ? adEngagementById[ad.$id] ?? { likes: 0, stamps: 0, reports: 0 }
+                    : null;
                   return (
                     <div
                       key={key}
@@ -676,12 +719,21 @@ export function AdminAdsPanel({ tag, title, description, headerIcon: HeaderIcon 
                           else handleClickEmptySlot(displaySlot);
                         }
                       }}
-                      className={`relative aspect-[3/4] transition-all transform rounded-xl overflow-hidden group ${
-                        ad || canAdd
-                          ? "cursor-pointer hover:scale-[1.02] hover:z-10"
-                          : "opacity-60 cursor-not-allowed"
-                      }`}
+                      className={
+                        ad
+                          ? `flex flex-col rounded-xl overflow-hidden border bg-card/50 transition-all group ${
+                              ad.isBlacklisted
+                                ? "border-red-500/50 bg-red-950/10 hover:border-red-500/70 hover:shadow-lg hover:scale-[1.01] hover:z-10 cursor-pointer"
+                                : "border-border/50 hover:border-primary/30 hover:shadow-lg hover:scale-[1.01] hover:z-10 cursor-pointer"
+                            }`
+                          : `flex flex-col rounded-xl overflow-hidden border transition-all ${
+                              canAdd
+                                ? "border-dashed border-amber-500/40 bg-amber-500/[0.07] cursor-pointer hover:border-amber-400/60 hover:bg-amber-500/15 hover:shadow-md hover:scale-[1.01] hover:z-10"
+                                : "border-border/30 bg-muted/15 opacity-60 cursor-not-allowed"
+                            }`
+                      }
                     >
+                      <div className="relative aspect-[3/4] w-full shrink-0 overflow-hidden bg-secondary/30">
                       {ad ? (
                         <>
                           {(() => {
@@ -689,14 +741,13 @@ export function AdminAdsPanel({ tag, title, description, headerIcon: HeaderIcon 
                             const firstVideoMedia = mediaItems.find((item) => isVideoUrl(item)) || "";
                             const firstImageMedia = mediaItems.find((item) => !isVideoUrl(item)) || "";
                             const coverImage = ad.image || firstImageMedia;
-                            const hasVideo = mediaItems.some((item) => isVideoUrl(item));
                             return (
                               <>
                                 {coverImage ? (
                                   <ImageThumbnail
                                     src={getImageUrl(coverImage, 300, 400)}
-                                    alt=""
-                                    className="w-full h-full object-cover"
+                                    alt={ad.title || "Ad"}
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                                   />
                                 ) : firstVideoMedia ? (
                                   <VideoThumbnail src={getVideoUrl(firstVideoMedia)} />
@@ -708,30 +759,39 @@ export function AdminAdsPanel({ tag, title, description, headerIcon: HeaderIcon 
                                     <Play className="h-8 w-8 text-white/80" />
                                   </div>
                                 )}
-                                {hasVideo && (
-                                  <div className="absolute top-2 right-2 px-2 py-1 rounded bg-black/60 text-white text-xs font-medium flex items-center gap-1 z-10">
-                                    <Play className="h-3 w-3" />
-                                    Video
-                                  </div>
-                                )}
                               </>
                             );
                           })()}
-                          <div className="absolute top-2 left-2 z-10 px-2 py-1 rounded-md bg-black/70 text-white text-sm font-bold shadow">
-                            {label}
+                          <div className="absolute top-2 left-2 z-10 px-2 py-1 rounded-md bg-black/70 text-white text-xs font-medium flex items-center gap-1 shadow">
+                            <Megaphone className="w-3 h-3 shrink-0 opacity-90" />
+                            Ad
                           </div>
-                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-2 pb-2 pt-6">
-                            <div className="flex items-center justify-between text-[11px] text-white/90">
+                          <div className="absolute top-2 right-2 flex flex-col gap-1 items-end z-10">
+                            {ad.media?.some((m) => isVideoUrl(m)) && (
+                              <div className="px-2 py-1 rounded bg-black/60 text-white text-xs font-medium flex items-center gap-1">
+                                <Play className="h-3 w-3 shrink-0" />
+                                Video
+                              </div>
+                            )}
+                            {ad.isBlacklisted && (
+                              <div className="px-2 py-1 rounded bg-red-600/90 text-white text-xs font-medium flex items-center gap-1">
+                                <Ban className="w-3 h-3 shrink-0" />
+                                Blocked
+                              </div>
+                            )}
+                          </div>
+                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-2 pb-2 pt-6 pointer-events-none">
+                            <div className="flex items-center justify-between text-[11px] text-white/90 tabular-nums">
                               <span className="flex items-center gap-1">
-                                <Eye className="h-3 w-3" />
+                                <Eye className="h-3 w-3 shrink-0" />
                                 {(ad.views || 0).toLocaleString()}
                               </span>
                               <span className="flex items-center gap-1">
-                                <MousePointer className="h-3 w-3" />
+                                <MousePointer className="h-3 w-3 shrink-0" />
                                 {(ad.clicks || 0).toLocaleString()}
                               </span>
                               <span className="flex items-center gap-1">
-                                <TrendingUp className="h-3 w-3" />
+                                <TrendingUp className="h-3 w-3 shrink-0" />
                                 {(ad.views || 0) > 0 ? (((ad.clicks || 0) / (ad.views || 1)) * 100).toFixed(1) : "0.0"}%
                               </span>
                             </div>
@@ -739,16 +799,48 @@ export function AdminAdsPanel({ tag, title, description, headerIcon: HeaderIcon 
                         </>
                       ) : (
                         <div
-                          className={`w-full h-full rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1 transition-colors ${
-                            canAdd
-                              ? "border-amber-500/40 bg-amber-500/10 text-amber-400 hover:border-amber-400 hover:bg-amber-500/20"
-                              : "border-slate-500/30 bg-slate-500/5 text-slate-500"
+                          className={`w-full h-full flex flex-col items-center justify-center gap-1 transition-colors ${
+                            canAdd ? "text-amber-400/95" : "text-slate-500"
                           }`}
                         >
-                          <span className="text-2xl sm:text-3xl font-bold">{label}</span>
-                          <span className="text-[10px] opacity-70">{canAdd ? "Empty" : "Full"}</span>
+                          <span className="text-2xl sm:text-3xl font-bold tabular-nums">{label}</span>
+                          <span className="text-[10px] opacity-80">{canAdd ? "Empty slot" : "Full"}</span>
                         </div>
                       )}
+                      </div>
+                      {ad && eng ? (
+                        <div className="p-2 space-y-1.5 min-h-0">
+                          <p className="text-sm font-medium leading-snug line-clamp-2 text-foreground">
+                            {ad.title?.trim() || "Untitled"}
+                          </p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            <span className="font-medium text-foreground/70">Slot {label}</span>
+                            {ad.city || ad.state
+                              ? ` · ${[ad.city, ad.state].filter(Boolean).join(", ")}`
+                              : ""}
+                          </p>
+                          <div className="flex items-center justify-between text-xs text-muted-foreground tabular-nums pt-0.5">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <span className="flex items-center gap-1 shrink-0">
+                                <Heart className="h-3.5 w-3.5 shrink-0" />
+                                {eng.likes}
+                              </span>
+                              <span className="flex items-center gap-1 shrink-0">
+                                <Users className="h-3.5 w-3.5 shrink-0" />
+                                {eng.stamps}
+                              </span>
+                            </div>
+                            <span
+                              className={`flex items-center gap-1 shrink-0 ${
+                                eng.reports > 0 ? "text-red-500" : "text-muted-foreground"
+                              }`}
+                            >
+                              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                              {eng.reports}
+                            </span>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   );
                 });

@@ -1256,6 +1256,10 @@ export type FieldDistributionResult = {
   totalInDatabase: number;
   /** Documents read for aggregation (capped) */
   scannedCount: number;
+  /** Sum of `views` over the same capped scan (e.g. sponsor ads pie). */
+  sampleViewsSum?: number;
+  /** Sum of `clicks` over the same capped scan. */
+  sampleClicksSum?: number;
 };
 
 function collapseSlices(
@@ -1368,73 +1372,181 @@ export async function getExchangeListingsFieldDistribution(
   }
 }
 
-/** Sponsor ads: views summed by category + aggregate CTR over the same scanned sample (posts admin pie). */
-export type SponsorAdsViewCategoryAnalytics = FieldDistributionResult & {
-  totalViews: number;
-  totalClicks: number;
-  /** clicks / views * 100 over scanned ads */
-  conversionRatePct: number;
+/** Full-database counts for exchange listing status buckets (admin dashboard row 3). */
+export type ExchangeAdminStatusCounts = {
+  active: number;
+  expired: number;
+  sold: number;
 };
 
-/**
- * Newest sponsor ads (capped scan): pie slices = sum of `views` per category;
- * totals used for aggregate conversion (clicks/views) on the same sample.
- */
-export async function getSponsorAdsViewAnalyticsByCategory(): Promise<SponsorAdsViewCategoryAnalytics> {
+/** Posts / exchange admin list: pie + DB totals + view/click sums over the same capped scan as the pie. */
+export type ContentAdminDashboardMetrics = FieldDistributionResult & {
+  activeInDatabase: number;
+  recent7Days: number;
+  sampleViewsSum: number;
+  sampleClicksSum: number;
+  /** Set only for `getExchangeAdminDashboardMetrics`. */
+  exchangeStatusCounts?: ExchangeAdminStatusCounts;
+};
+
+export async function getPostsAdminDashboardMetrics(
+  postType: "post" | "event"
+): Promise<ContentAdminDashboardMetrics> {
   const dbId = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!;
-  const viewByCategory = new Map<string, number>();
-  let offset = 0;
-  let totalInDb = 0;
-  let totalViews = 0;
-  let totalClicks = 0;
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const since = sevenDaysAgo.toISOString();
 
   try {
+    const [totalRes, activeRes, recentRes] = await Promise.all([
+      databases.listDocuments(dbId, Collections.POSTS, [
+        Query.equal("type", postType),
+        Query.limit(1),
+      ]),
+      databases.listDocuments(dbId, Collections.POSTS, [
+        Query.equal("type", postType),
+        Query.or([Query.isNull("isBlacklisted"), Query.equal("isBlacklisted", false)]),
+        Query.limit(1),
+      ]),
+      databases.listDocuments(dbId, Collections.POSTS, [
+        Query.equal("type", postType),
+        Query.greaterThan("$createdAt", since),
+        Query.limit(1),
+      ]),
+    ]);
+
+    const counts = new Map<string, number>();
+    let offset = 0;
+    let sampleViews = 0;
+    let sampleClicks = 0;
+
     while (offset < DISTRIBUTION_SCAN_CAP) {
-      const res = await databases.listDocuments(dbId, Collections.SPONSOR_ADS, [
+      const res = await databases.listDocuments(dbId, Collections.POSTS, [
+        Query.equal("type", postType),
         Query.orderDesc("$createdAt"),
         Query.limit(DISTRIBUTION_SCAN_BATCH),
         Query.offset(offset),
       ]);
-      if (offset === 0) totalInDb = res.total;
       if (res.documents.length === 0) break;
       for (const doc of res.documents) {
         const d = doc as { category?: string; views?: number; clicks?: number };
         const raw = String(d.category ?? "").trim();
         const key = raw || "—";
-        const v = Number(d.views) || 0;
-        const c = Number(d.clicks) || 0;
-        viewByCategory.set(key, (viewByCategory.get(key) ?? 0) + v);
-        totalViews += v;
-        totalClicks += c;
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+        sampleViews += Number(d.views) || 0;
+        sampleClicks += Number(d.clicks) || 0;
       }
       offset += res.documents.length;
       if (res.documents.length < DISTRIBUTION_SCAN_BATCH) break;
     }
 
-    const slices = [...viewByCategory.entries()]
+    const slices = [...counts.entries()]
       .map(([key, count]) => ({ key, label: key, count }))
       .sort((a, b) => b.count - a.count);
 
-    const conversionRatePct =
-      totalViews > 0 ? (totalClicks / totalViews) * 100 : 0;
-
     return {
       slices: collapseSlices(slices, DISTRIBUTION_MAX_SLICES, "Other categories"),
-      totalInDatabase: totalInDb,
+      totalInDatabase: totalRes.total,
       scannedCount: offset,
-      totalViews,
-      totalClicks,
-      conversionRatePct,
+      activeInDatabase: activeRes.total,
+      recent7Days: recentRes.total,
+      sampleViewsSum: sampleViews,
+      sampleClicksSum: sampleClicks,
     };
   } catch (error) {
-    console.error("Error aggregating sponsor ad views by category:", error);
+    console.error("Error loading posts admin dashboard metrics:", error);
     return {
       slices: [],
       totalInDatabase: 0,
       scannedCount: 0,
-      totalViews: 0,
-      totalClicks: 0,
-      conversionRatePct: 0,
+      activeInDatabase: 0,
+      recent7Days: 0,
+      sampleViewsSum: 0,
+      sampleClicksSum: 0,
+    };
+  }
+}
+
+export async function getExchangeAdminDashboardMetrics(): Promise<ContentAdminDashboardMetrics> {
+  const dbId = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!;
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const since = sevenDaysAgo.toISOString();
+
+  try {
+    const [totalRes, activeRes, recentRes, soldRes, expiredRes] = await Promise.all([
+      databases.listDocuments(dbId, Collections.EXCHANGE_LISTINGS, [Query.limit(1)]),
+      databases.listDocuments(dbId, Collections.EXCHANGE_LISTINGS, [
+        Query.equal("status", "active"),
+        Query.limit(1),
+      ]),
+      databases.listDocuments(dbId, Collections.EXCHANGE_LISTINGS, [
+        Query.greaterThan("$createdAt", since),
+        Query.limit(1),
+      ]),
+      databases.listDocuments(dbId, Collections.EXCHANGE_LISTINGS, [
+        Query.equal("status", "sold"),
+        Query.limit(1),
+      ]),
+      databases.listDocuments(dbId, Collections.EXCHANGE_LISTINGS, [
+        Query.or([Query.equal("status", "expired"), Query.equal("status", "auction_expired")]),
+        Query.limit(1),
+      ]),
+    ]);
+
+    const counts = new Map<string, number>();
+    let offset = 0;
+    let sampleViews = 0;
+    let sampleClicks = 0;
+
+    while (offset < DISTRIBUTION_SCAN_CAP) {
+      const res = await databases.listDocuments(dbId, Collections.EXCHANGE_LISTINGS, [
+        Query.orderDesc("$createdAt"),
+        Query.limit(DISTRIBUTION_SCAN_BATCH),
+        Query.offset(offset),
+      ]);
+      if (res.documents.length === 0) break;
+      for (const doc of res.documents) {
+        const d = doc as { status?: string; views?: number; clicks?: number };
+        const raw = String(d.status ?? "").trim();
+        const key = raw || "—";
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+        sampleViews += Number(d.views) || 0;
+        sampleClicks += Number(d.clicks) || 0;
+      }
+      offset += res.documents.length;
+      if (res.documents.length < DISTRIBUTION_SCAN_BATCH) break;
+    }
+
+    const slices = [...counts.entries()]
+      .map(([key, count]) => ({ key, label: key, count }))
+      .sort((a, b) => b.count - a.count);
+
+    return {
+      slices: collapseSlices(slices, DISTRIBUTION_MAX_SLICES, "Other statuses"),
+      totalInDatabase: totalRes.total,
+      scannedCount: offset,
+      activeInDatabase: activeRes.total,
+      recent7Days: recentRes.total,
+      sampleViewsSum: sampleViews,
+      sampleClicksSum: sampleClicks,
+      exchangeStatusCounts: {
+        active: activeRes.total,
+        sold: soldRes.total,
+        expired: expiredRes.total,
+      },
+    };
+  } catch (error) {
+    console.error("Error loading exchange admin dashboard metrics:", error);
+    return {
+      slices: [],
+      totalInDatabase: 0,
+      scannedCount: 0,
+      activeInDatabase: 0,
+      recent7Days: 0,
+      sampleViewsSum: 0,
+      sampleClicksSum: 0,
+      exchangeStatusCounts: { active: 0, sold: 0, expired: 0 },
     };
   }
 }
@@ -1949,16 +2061,18 @@ export type SponsorAdsDistributionParams = {
 };
 
 /**
- * Category or status mix among newest sponsor ads (capped scan), scoped like list filters.
+ * Newest sponsor ads (capped scan): totals for pie (views vs clicks) and list context.
+ * `field` is kept for call-site compatibility; aggregation uses views/clicks only.
  */
 export async function getSponsorAdsFieldDistribution(
   params: SponsorAdsDistributionParams
 ): Promise<FieldDistributionResult> {
   const dbId = process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!;
-  const { isAdminCreated, tag, field } = params;
-  const counts = new Map<string, number>();
+  const { isAdminCreated, tag } = params;
   let offset = 0;
   let totalInDb = 0;
+  let sampleViews = 0;
+  let sampleClicks = 0;
 
   const baseQueries: string[] = [];
   if (isAdminCreated) {
@@ -1983,31 +2097,30 @@ export async function getSponsorAdsFieldDistribution(
       if (offset === 0) totalInDb = res.total;
       if (res.documents.length === 0) break;
       for (const doc of res.documents) {
-        const d = doc as { category?: string; status?: string };
-        const raw =
-          field === "category"
-            ? String(d.category ?? "").trim()
-            : String(d.status ?? "").trim();
-        const key = raw || "—";
-        counts.set(key, (counts.get(key) ?? 0) + 1);
+        const ad = doc as unknown as SponsorAd;
+        sampleViews += Number(ad.views) || 0;
+        sampleClicks += Number(ad.clicks) || 0;
       }
       offset += res.documents.length;
       if (res.documents.length < DISTRIBUTION_SCAN_BATCH) break;
     }
 
-    const slices = [...counts.entries()]
-      .map(([key, count]) => ({ key, label: key, count }))
-      .sort((a, b) => b.count - a.count);
-
-    const otherLabel = field === "category" ? "Other categories" : "Other statuses";
     return {
-      slices: collapseSlices(slices, DISTRIBUTION_MAX_SLICES, otherLabel),
+      slices: [],
       totalInDatabase: totalInDb,
       scannedCount: offset,
+      sampleViewsSum: sampleViews,
+      sampleClicksSum: sampleClicks,
     };
   } catch (error) {
     console.error("Error aggregating sponsor ads distribution:", error);
-    return { slices: [], totalInDatabase: 0, scannedCount: 0 };
+    return {
+      slices: [],
+      totalInDatabase: 0,
+      scannedCount: 0,
+      sampleViewsSum: 0,
+      sampleClicksSum: 0,
+    };
   }
 }
 
@@ -2449,6 +2562,61 @@ export async function getAdsLikeCounts(adIds: string[]): Promise<Map<string, num
   } catch (error) {
     console.error("Error fetching ads like counts:", error);
     adIds.forEach((id) => result.set(id, 0));
+    return result;
+  }
+}
+
+/**
+ * Batch report counts where `reports.postId` matches sponsor ad `$id`
+ * (same field name as post reports; app uses this id when reporting an ad).
+ */
+export async function getAdsReportCounts(adIds: string[]): Promise<Map<string, number>> {
+  const result = new Map<string, number>();
+  if (adIds.length === 0) return result;
+
+  try {
+    const res = await databases.listDocuments(
+      process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!,
+      Collections.REPORTS,
+      [Query.equal("postId", adIds), Query.limit(5000)]
+    );
+
+    adIds.forEach((id) => result.set(id, 0));
+    res.documents.forEach((doc) => {
+      const pid = doc.postId as string;
+      result.set(pid, (result.get(pid) || 0) + 1);
+    });
+
+    return result;
+  } catch (error) {
+    console.error("Error fetching ads report counts:", error);
+    adIds.forEach((id) => result.set(id, 0));
+    return result;
+  }
+}
+
+/** Stamp counts for arbitrary ids (post id or ad id if stamps ever use the same field). */
+export async function getPostStampsByPostIds(ids: string[]): Promise<Map<string, number>> {
+  const result = new Map<string, number>();
+  if (ids.length === 0) return result;
+
+  try {
+    const res = await databases.listDocuments(
+      process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!,
+      Collections.POST_STAMPS,
+      [Query.equal("postId", ids), Query.limit(5000)]
+    );
+
+    ids.forEach((id) => result.set(id, 0));
+    res.documents.forEach((doc) => {
+      const pid = doc.postId as string;
+      result.set(pid, (result.get(pid) || 0) + 1);
+    });
+
+    return result;
+  } catch (error) {
+    console.error("Error fetching stamp counts:", error);
+    ids.forEach((id) => result.set(id, 0));
     return result;
   }
 }

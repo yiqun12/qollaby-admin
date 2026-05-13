@@ -8,6 +8,8 @@ import {
   getSponsorAdsFieldDistribution,
   getAdMetrics,
   getAdsLikeCounts,
+  getAdsReportCounts,
+  getPostStampsByPostIds,
   type FieldDistributionResult,
   SponsorAd,
   SponsorAdStatus,
@@ -25,25 +27,29 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Megaphone,
-  Search,
+  AlertTriangle,
+  Ban,
+  CheckCircle,
   ChevronLeft,
   ChevronRight,
-  RefreshCw,
-  Heart,
-  Eye,
-  MousePointer,
-  TrendingUp,
-  Ban,
-  Play,
-  CheckCircle,
   Clock,
-  XCircle,
+  Eye,
+  Heart,
+  Megaphone,
+  MousePointer,
+  Play,
+  RefreshCw,
+  Search,
+  TrendingUp,
+  Users,
   X,
+  XCircle,
 } from "lucide-react";
 
 interface AdWithStats extends SponsorAd {
   computedLikeCount: number;
+  computedStampCount: number;
+  computedReportCount: number;
 }
 
 function getSponsorAdStorageUrl(
@@ -157,12 +163,20 @@ export default function UserAdsPage() {
 
       const tLikes = performance.now();
       const adIds = result.ads.map((ad) => ad.$id);
-      const likeCounts = await getAdsLikeCounts(adIds);
-      console.log(`[ads/user] getAdsLikeCounts (${adIds.length} ads): ${(performance.now() - tLikes).toFixed(0)}ms`);
+      const [likeCounts, stampsMap, reportsMap] = await Promise.all([
+        getAdsLikeCounts(adIds),
+        getPostStampsByPostIds(adIds),
+        getAdsReportCounts(adIds),
+      ]);
+      console.log(
+        `[ads/user] engagement batch (${adIds.length} ads): ${(performance.now() - tLikes).toFixed(0)}ms`
+      );
 
       const adsWithStats: AdWithStats[] = result.ads.map((ad) => ({
         ...ad,
         computedLikeCount: likeCounts.get(ad.$id) || 0,
+        computedStampCount: stampsMap.get(ad.$id) || 0,
+        computedReportCount: reportsMap.get(ad.$id) || 0,
       }));
 
       setAds(adsWithStats);
@@ -275,18 +289,14 @@ export default function UserAdsPage() {
     }
   };
 
-  const distributionRows = useMemo(() => {
-    if (!distribution?.slices?.length) return [];
-    const resolveCategory = (key: string) => {
-      if (key === "—") return "(No category)";
-      const c = dynamicCategories.find((x) => x.value === key);
-      return c?.name ?? key;
-    };
-    return distribution.slices.map((s) => ({
-      label: s.key === "__other__" ? s.label : resolveCategory(s.key),
-      count: s.count,
-    }));
-  }, [distribution, dynamicCategories]);
+  const viewClickPieRows = useMemo(() => {
+    const v = distribution?.sampleViewsSum ?? 0;
+    const c = distribution?.sampleClicksSum ?? 0;
+    return [
+      { label: "Views", count: v },
+      { label: "Clicks", count: c },
+    ];
+  }, [distribution]);
 
   return (
     <div className="space-y-6">
@@ -339,8 +349,8 @@ export default function UserAdsPage() {
           </CardContent>
         </Card>
         <ListDistributionPieChart
-          title="Category (recent sample)"
-          rows={distributionRows}
+          title="Clicks vs views (recent sample)"
+          rows={viewClickPieRows}
           totalInDatabase={distribution?.totalInDatabase ?? 0}
           scannedCount={distribution?.scannedCount ?? 0}
         />
@@ -478,9 +488,19 @@ export default function UserAdsPage() {
 
           {/* Ads Grid */}
           {loading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {[...Array(8)].map((_, i) => (
-                <Skeleton key={i} className="aspect-[4/5] rounded-lg" />
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              {[...Array(10)].map((_, i) => (
+                <div
+                  key={i}
+                  className="flex flex-col rounded-xl overflow-hidden border border-border/40 bg-card/30"
+                >
+                  <Skeleton className="aspect-[3/4] w-full shrink-0 rounded-none" />
+                  <div className="p-2 space-y-2 border-t border-border/30">
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-3 w-2/3" />
+                    <Skeleton className="h-3 w-full" />
+                  </div>
+                </div>
               ))}
             </div>
           ) : ads.length === 0 ? (
@@ -493,27 +513,42 @@ export default function UserAdsPage() {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                 {ads.map((ad) => {
                   const mediaItems = ad.media || [];
                   const firstVideoMedia = mediaItems.find((item) => isVideoUrl(item)) || "";
                   const firstImageMedia = mediaItems.find((item) => !isVideoUrl(item)) || "";
                   const coverImage = ad.image || firstImageMedia;
-                  const hasVideo = mediaItems.some((item) => isVideoUrl(item));
+                  const views = ad.views || 0;
+                  const clicks = ad.clicks || 0;
+                  const ctrPct = views > 0 ? (clicks / views) * 100 : 0;
+                  const slotLabel =
+                    ad.slot !== undefined && ad.slot !== null ? String(ad.slot + 1) : null;
 
                   return (
                     <div
                       key={ad.$id}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => router.push(`/ads/${ad.$id}`)}
-                      className="group relative bg-card/50 rounded-lg overflow-hidden border border-border/50 hover:border-primary/50 transition-all cursor-pointer hover:shadow-lg"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          router.push(`/ads/${ad.$id}`);
+                        }
+                      }}
+                      className={`flex flex-col rounded-xl overflow-hidden border bg-card/50 transition-all group outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${
+                        ad.isBlacklisted
+                          ? "border-red-500/50 bg-red-950/10 hover:border-red-500/70 cursor-pointer hover:shadow-lg hover:scale-[1.01] hover:z-10"
+                          : "border-border/50 hover:border-primary/30 cursor-pointer hover:shadow-lg hover:scale-[1.01] hover:z-10"
+                      }`}
                     >
-                      {/* Media */}
-                      <div className="relative aspect-[4/3]">
+                      <div className="relative aspect-[3/4] w-full shrink-0 overflow-hidden bg-secondary/30">
                         {coverImage ? (
                           <ImageThumbnail
-                            src={getSponsorAdPreviewUrl(coverImage, 400, 400)}
-                            alt={ad.title}
-                            className="w-full h-full object-cover"
+                            src={getSponsorAdPreviewUrl(coverImage, 400, 533)}
+                            alt={ad.title || "Ad"}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                           />
                         ) : firstVideoMedia ? (
                           <VideoThumbnail
@@ -530,43 +565,83 @@ export default function UserAdsPage() {
                             <Play className="h-10 w-10 text-white/80" />
                           </div>
                         )}
-                        {hasVideo && (
-                          <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/60 text-white text-xs font-medium flex items-center gap-1 z-10">
-                            <Play className="h-3 w-3" />
-                            Video
-                          </div>
-                        )}
-                        {/* Status badge */}
-                        <div className={`absolute top-2 right-2 px-2 py-0.5 rounded text-xs font-medium flex items-center gap-1 ${getStatusColor(ad.status)}`}>
-                          {getStatusIcon(ad.status)}
-                          {ad.status}
+
+                        <div className="absolute top-2 left-2 z-10 px-2 py-1 rounded-md bg-black/70 text-white text-xs font-medium flex items-center gap-1 shadow">
+                          <Megaphone className="w-3 h-3 shrink-0 opacity-90" />
+                          Ad
                         </div>
-                        {/* Slot badge */}
-                        {ad.slot !== undefined && ad.slot !== null && (
-                          <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-amber-500/90 text-white text-xs font-bold">
-                            Slot {ad.slot + 1}
+
+                        <div className="absolute top-2 right-2 flex flex-col gap-1 items-end z-10 max-w-[min(100%,11rem)]">
+                          <div
+                            className={`px-2 py-1 rounded-md text-xs font-medium flex items-center gap-1 shadow-sm ${getStatusColor(ad.status)}`}
+                          >
+                            {getStatusIcon(ad.status)}
+                            <span className="truncate capitalize">{ad.status}</span>
                           </div>
-                        )}
+                          {ad.media?.some((m) => isVideoUrl(m)) && (
+                            <div className="px-2 py-1 rounded-md bg-black/60 text-white text-xs font-medium flex items-center gap-1">
+                              <Play className="h-3 w-3 shrink-0" />
+                              Video
+                            </div>
+                          )}
+                          {ad.isBlacklisted && (
+                            <div className="px-2 py-1 rounded-md bg-red-600/90 text-white text-xs font-medium flex items-center gap-1">
+                              <Ban className="w-3 h-3 shrink-0" />
+                              Blocked
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-2 pb-2 pt-6 pointer-events-none">
+                          <div className="flex items-center justify-between text-[11px] text-white/90 tabular-nums">
+                            <span className="flex items-center gap-1">
+                              <Eye className="h-3 w-3 shrink-0" />
+                              {views.toLocaleString()}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <MousePointer className="h-3 w-3 shrink-0" />
+                              {clicks.toLocaleString()}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <TrendingUp className="h-3 w-3 shrink-0" />
+                              {ctrPct.toFixed(1)}%
+                            </span>
+                          </div>
+                        </div>
                       </div>
 
-                      {/* Content */}
-                      <div className="p-3">
-                        <h3 className="font-medium text-sm truncate">{ad.title}</h3>
-                        <p className="text-xs text-muted-foreground truncate mt-1">
-                          {ad.city}, {ad.state}
+                      <div className="p-2 space-y-1.5 min-h-0">
+                        <p className="text-sm font-medium leading-snug line-clamp-2 text-foreground">
+                          {ad.title?.trim() || "Untitled"}
                         </p>
-                        <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
-                          <span className="flex items-center gap-1">
-                            <Heart className="h-3 w-3" />
-                            {ad.computedLikeCount}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Eye className="h-3 w-3" />
-                            {ad.views || 0}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <MousePointer className="h-3 w-3" />
-                            {ad.clicks || 0}
+                        <p className="text-xs text-muted-foreground truncate">
+                          {slotLabel ? (
+                            <span className="font-medium text-foreground/70">Slot {slotLabel}</span>
+                          ) : (
+                            <span className="font-medium text-foreground/70">Member ad</span>
+                          )}
+                          {ad.city || ad.state
+                            ? ` · ${[ad.city, ad.state].filter(Boolean).join(", ")}`
+                            : ""}
+                        </p>
+                        <div className="flex items-center justify-between text-xs text-muted-foreground tabular-nums pt-0.5">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="flex items-center gap-1 shrink-0">
+                              <Heart className="h-3.5 w-3.5 shrink-0" />
+                              {ad.computedLikeCount}
+                            </span>
+                            <span className="flex items-center gap-1 shrink-0">
+                              <Users className="h-3.5 w-3.5 shrink-0" />
+                              {ad.computedStampCount}
+                            </span>
+                          </div>
+                          <span
+                            className={`flex items-center gap-1 shrink-0 ${
+                              ad.computedReportCount > 0 ? "text-red-500" : "text-muted-foreground"
+                            }`}
+                          >
+                            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                            {ad.computedReportCount}
                           </span>
                         </div>
                       </div>
