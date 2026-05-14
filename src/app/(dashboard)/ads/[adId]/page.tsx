@@ -5,8 +5,6 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   getSponsorAdById,
   getAdLikeCount,
-  blacklistSponsorAd,
-  unblacklistSponsorAd,
   getUserByUserId,
   deleteSponsorAd,
   getAdsReportCounts,
@@ -48,7 +46,6 @@ import {
   Eye,
   MousePointer,
   Ban,
-  CheckCircle,
   RefreshCw,
   Megaphone,
   Shield,
@@ -82,7 +79,6 @@ function AdDetailPageInner() {
   const [stampCount, setStampCount] = useState(0);
   const [reportCount, setReportCount] = useState(0);
   const [actionLoading, setActionLoading] = useState(false);
-  const [blacklistDialog, setBlacklistDialog] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [allCategories, setAllCategories] = useState<Category[]>([]);
@@ -128,24 +124,6 @@ function AdDetailPageInner() {
     if (!ad?.isAdminCreated) return "/ads/user";
     return `/ads/admin${adminListQueryFrom(ad, urlTag)}`;
   }, [ad, urlTag]);
-
-  const handleBlacklist = async () => {
-    if (!ad) return;
-    setActionLoading(true);
-    try {
-      if (ad.isBlacklisted) {
-        await unblacklistSponsorAd(adId);
-      } else {
-        await blacklistSponsorAd(adId);
-      }
-      await fetchAd();
-    } catch (error) {
-      console.error("Failed to update blacklist status:", error);
-    } finally {
-      setActionLoading(false);
-      setBlacklistDialog(false);
-    }
-  };
 
   const handleDelete = async () => {
     if (!ad || !ad.isAdminCreated) return;
@@ -248,7 +226,7 @@ function AdDetailPageInner() {
             </h1>
             <p className="text-muted-foreground">
               {ad.isAdminCreated
-                ? "Review performance and moderation; use Edit to change placement and creative."
+                ? "Review performance; use Edit to change placement and creative."
                 : "View advertisement information"}
             </p>
           </div>
@@ -276,29 +254,6 @@ function AdDetailPageInner() {
               Edit
             </Button>
           )}
-          <Button
-            variant={ad.isBlacklisted ? "outline" : "destructive"}
-            size="sm"
-            onClick={() => setBlacklistDialog(true)}
-            disabled={actionLoading}
-            className={
-              ad.isBlacklisted
-                ? "border-green-500/50 text-green-500 hover:bg-green-500/20 hover:text-green-400"
-                : ""
-            }
-          >
-            {ad.isBlacklisted ? (
-              <>
-                <CheckCircle className="h-4 w-4 mr-2" />
-                Unblock ad
-              </>
-            ) : (
-              <>
-                <Ban className="h-4 w-4 mr-2" />
-                Block ad
-              </>
-            )}
-          </Button>
           {ad.isAdminCreated && (
             <Button
               variant="destructive"
@@ -357,6 +312,25 @@ function AdDetailPageInner() {
         </Card>
 
         <div className="space-y-6">
+          <Card className="bg-card/50 border-border/50">
+            <CardHeader>
+              <CardTitle className="text-lg">Analysis</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <AdStatRow icon={Eye} label="Views" value={ad.views || 0} color="text-blue-500" />
+              <AdStatRow icon={MousePointer} label="Clicks" value={ad.clicks || 0} color="text-green-500" />
+              <AdStatRow icon={Heart} label="Likes" value={likeCount} color="text-pink-500" />
+              <AdStatRow icon={Users} label="Stamps" value={stampCount} color="text-cyan-500" />
+              <AdStatRow
+                icon={AlertTriangle}
+                label="Reports"
+                value={reportCount}
+                color={reportCount > 0 ? "text-red-500" : "text-muted-foreground"}
+              />
+              <AdConversionRow views={ad.views || 0} clicks={ad.clicks || 0} />
+            </CardContent>
+          </Card>
+
           <Card className="bg-card/50 border-border/50">
             <CardHeader>
               <CardTitle className="text-lg">Content</CardTitle>
@@ -447,25 +421,6 @@ function AdDetailPageInner() {
 
           <Card className="bg-card/50 border-border/50">
             <CardHeader>
-              <CardTitle className="text-lg">Statistics</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <AdStatRow icon={Eye} label="Views" value={ad.views || 0} color="text-blue-500" />
-              <AdStatRow icon={MousePointer} label="Clicks" value={ad.clicks || 0} color="text-green-500" />
-              <AdStatRow icon={Heart} label="Likes" value={likeCount} color="text-pink-500" />
-              <AdStatRow icon={Users} label="Stamps" value={stampCount} color="text-cyan-500" />
-              <AdStatRow
-                icon={AlertTriangle}
-                label="Reports"
-                value={reportCount}
-                color={reportCount > 0 ? "text-red-500" : "text-muted-foreground"}
-              />
-              <AdConversionRow views={ad.views || 0} clicks={ad.clicks || 0} />
-            </CardContent>
-          </Card>
-
-          <Card className="bg-card/50 border-border/50">
-            <CardHeader>
               <CardTitle className="text-lg">Target location</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -499,30 +454,6 @@ function AdDetailPageInner() {
           onSaved={fetchAd}
         />
       )}
-
-      <AlertDialog open={blacklistDialog} onOpenChange={setBlacklistDialog}>
-        <AlertDialogContent className="bg-card border-border">
-          <AlertDialogHeader>
-            <AlertDialogTitle>{ad.isBlacklisted ? "Unblock this ad?" : "Block this ad?"}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {ad.isBlacklisted
-                ? "This will make the ad visible in the public feed again."
-                : "This will hide the ad from the public feed."}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className="bg-secondary/50 border-border/50">Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleBlacklist}
-              className={
-                ad.isBlacklisted ? "bg-green-600 hover:bg-green-700" : "bg-destructive hover:bg-destructive/90"
-              }
-            >
-              {ad.isBlacklisted ? "Unblock" : "Block"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       <AlertDialog open={deleteDialog} onOpenChange={setDeleteDialog}>
         <AlertDialogContent className="bg-card border-border">
