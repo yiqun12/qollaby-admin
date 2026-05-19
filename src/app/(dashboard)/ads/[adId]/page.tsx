@@ -152,8 +152,11 @@ function AdDetailPageInner() {
           <Skeleton className="h-10 w-10 rounded-lg" />
           <Skeleton className="h-8 w-48" />
         </div>
-        <div className="flex flex-col gap-6">
-          <Skeleton className="aspect-square rounded-lg" />
+        <div className="grid gap-6 md:grid-cols-2">
+          <div className="space-y-6">
+            <Skeleton className="aspect-square rounded-lg" />
+            <Skeleton className="h-36 w-full rounded-lg" />
+          </div>
           <div className="space-y-4">
             {[...Array(4)].map((_, i) => (
               <Skeleton key={i} className="h-20 w-full" />
@@ -282,7 +285,8 @@ function AdDetailPageInner() {
         </div>
       )}
 
-      <div className="flex flex-col gap-6">
+      <div className="grid gap-6 md:grid-cols-2">
+        <div className="space-y-6">
         <Card className="bg-card/50 border-border/50">
           <CardContent className="pt-6">
             {processedMedia.length > 0 ? (
@@ -310,26 +314,6 @@ function AdDetailPageInner() {
             )}
           </CardContent>
         </Card>
-
-        <div className="space-y-6">
-          <Card className="bg-card/50 border-border/50">
-            <CardHeader>
-              <CardTitle className="text-lg">Analysis</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <AdStatRow icon={Eye} label="Views" value={ad.views || 0} color="text-blue-500" />
-              <AdStatRow icon={MousePointer} label="Clicks" value={ad.clicks || 0} color="text-green-500" />
-              <AdStatRow icon={Heart} label="Likes" value={likeCount} color="text-pink-500" />
-              <AdStatRow icon={Users} label="Stamps" value={stampCount} color="text-cyan-500" />
-              <AdStatRow
-                icon={AlertTriangle}
-                label="Reports"
-                value={reportCount}
-                color={reportCount > 0 ? "text-red-500" : "text-muted-foreground"}
-              />
-              <AdConversionRow views={ad.views || 0} clicks={ad.clicks || 0} />
-            </CardContent>
-          </Card>
 
           <Card className="bg-card/50 border-border/50">
             <CardHeader>
@@ -418,6 +402,27 @@ function AdDetailPageInner() {
               )}
             </CardContent>
           </Card>
+        </div>
+
+        <div className="space-y-6">
+          <Card className="bg-card/50 border-border/50">
+            <CardHeader>
+              <CardTitle className="text-lg">Analysis</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <AdStatRow icon={Eye} label="Views" value={ad.views || 0} color="text-blue-500" />
+              <AdStatRow icon={MousePointer} label="Clicks" value={ad.clicks || 0} color="text-green-500" />
+              <AdStatRow icon={Heart} label="Likes" value={likeCount} color="text-pink-500" />
+              <AdStatRow icon={Users} label="Stamps" value={stampCount} color="text-cyan-500" />
+              <AdStatRow
+                icon={AlertTriangle}
+                label="Reports"
+                value={reportCount}
+                color={reportCount > 0 ? "text-red-500" : "text-muted-foreground"}
+              />
+              <AdConversionRow views={ad.views || 0} clicks={ad.clicks || 0} />
+            </CardContent>
+          </Card>
 
           <Card className="bg-card/50 border-border/50">
             <CardHeader>
@@ -495,8 +500,11 @@ export default function AdDetailPage() {
             <Skeleton className="h-10 w-10 rounded-lg" />
             <Skeleton className="h-8 w-48" />
           </div>
-          <div className="flex flex-col gap-6">
-            <Skeleton className="aspect-square rounded-lg" />
+          <div className="grid gap-6 md:grid-cols-2">
+            <div className="space-y-6">
+              <Skeleton className="aspect-square rounded-lg" />
+              <Skeleton className="h-36 w-full rounded-lg" />
+            </div>
             <div className="space-y-4">
               {[...Array(4)].map((_, i) => (
                 <Skeleton key={i} className="h-20 w-full" />

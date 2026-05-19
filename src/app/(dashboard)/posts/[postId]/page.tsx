@@ -255,8 +255,11 @@ export default function PostDetailPage() {
           <Skeleton className="h-10 w-10 rounded-lg" />
           <Skeleton className="h-8 w-48" />
         </div>
-        <div className="flex flex-col gap-6">
-          <Skeleton className="aspect-square rounded-lg" />
+        <div className="grid gap-6 md:grid-cols-2">
+          <div className="space-y-6">
+            <Skeleton className="aspect-square rounded-lg" />
+            <Skeleton className="h-36 w-full rounded-lg" />
+          </div>
           <div className="space-y-4">
             {[...Array(4)].map((_, i) => (
               <Skeleton key={i} className="h-20 w-full" />
@@ -421,8 +424,9 @@ export default function PostDetailPage() {
         </div>
       )}
 
-      {/* Content: single column — gallery first, then detail cards (avoids empty side-by-side layout) */}
-      <div className="flex flex-col gap-6">
+      {/* md+: two columns — left: gallery + Content; right: stats, notes, meta */}
+      <div className="grid gap-6 md:grid-cols-2">
+        <div className="space-y-6">
         {/* Media gallery */}
         <Card className="bg-card/50 border-border/50">
           <CardContent className="pt-6">
@@ -453,8 +457,6 @@ export default function PostDetailPage() {
           </CardContent>
         </Card>
 
-        {/* Stats and info */}
-        <div className="space-y-6">
           {/* Title and description */}
           <Card className="bg-card/50 border-border/50">
             <CardHeader>
@@ -530,7 +532,9 @@ export default function PostDetailPage() {
               )}
             </CardContent>
           </Card>
+        </div>
 
+        <div className="space-y-6">
           {/* Statistics — post 与 exchange 共用 post_likes / post_stamps 的 postId */}
           <Card className="bg-card/50 border-border/50">
             <CardHeader>
