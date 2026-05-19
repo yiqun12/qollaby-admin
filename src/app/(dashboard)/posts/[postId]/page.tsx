@@ -255,7 +255,7 @@ export default function PostDetailPage() {
           <Skeleton className="h-10 w-10 rounded-lg" />
           <Skeleton className="h-8 w-48" />
         </div>
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="flex flex-col gap-6">
           <Skeleton className="aspect-square rounded-lg" />
           <div className="space-y-4">
             {[...Array(4)].map((_, i) => (
@@ -421,8 +421,8 @@ export default function PostDetailPage() {
         </div>
       )}
 
-      {/* Content */}
-      <div className="grid gap-6 md:grid-cols-2">
+      {/* Content: single column — gallery first, then detail cards (avoids empty side-by-side layout) */}
+      <div className="flex flex-col gap-6">
         {/* Media gallery */}
         <Card className="bg-card/50 border-border/50">
           <CardContent className="pt-6">

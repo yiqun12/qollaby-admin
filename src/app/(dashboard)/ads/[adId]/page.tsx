@@ -152,7 +152,7 @@ function AdDetailPageInner() {
           <Skeleton className="h-10 w-10 rounded-lg" />
           <Skeleton className="h-8 w-48" />
         </div>
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="flex flex-col gap-6">
           <Skeleton className="aspect-square rounded-lg" />
           <div className="space-y-4">
             {[...Array(4)].map((_, i) => (
@@ -282,7 +282,7 @@ function AdDetailPageInner() {
         </div>
       )}
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="flex flex-col gap-6">
         <Card className="bg-card/50 border-border/50">
           <CardContent className="pt-6">
             {processedMedia.length > 0 ? (
@@ -495,7 +495,7 @@ export default function AdDetailPage() {
             <Skeleton className="h-10 w-10 rounded-lg" />
             <Skeleton className="h-8 w-48" />
           </div>
-          <div className="grid gap-6 md:grid-cols-2">
+          <div className="flex flex-col gap-6">
             <Skeleton className="aspect-square rounded-lg" />
             <div className="space-y-4">
               {[...Array(4)].map((_, i) => (
