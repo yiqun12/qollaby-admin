@@ -114,10 +114,12 @@ export function AdminAdDetailEditDialog({ open, onOpenChange, ad, onSaved }: Adm
     }
   }, [editForm.category]);
 
+  // Slot capacity is per tag — count usage within this ad's tag only.
+  const adTag: AdTagType = ad.tag === "event" || ad.tag === "exchange" ? ad.tag : "home";
   const refreshSlotUsage = useCallback(async () => {
-    const usage = await getSlotUsageCounts();
+    const usage = await getSlotUsageCounts(adTag);
     setEditSlotUsageCounts(usage);
-  }, []);
+  }, [adTag]);
 
   useEffect(() => {
     if (open) {
@@ -210,8 +212,6 @@ export function AdminAdDetailEditDialog({ open, onOpenChange, ad, onSaved }: Adm
         }
       }
 
-      const tag: AdTagType = ad.tag === "event" || ad.tag === "exchange" ? ad.tag : "home";
-
       await updateSponsorAd(ad.$id, {
         title: editForm.title,
         description: editForm.description || undefined,
@@ -224,14 +224,15 @@ export function AdminAdDetailEditDialog({ open, onOpenChange, ad, onSaved }: Adm
         slot: editForm.slot,
         phoneNumber: editForm.phoneNumber || undefined,
         website: editForm.website || undefined,
-        tag,
+        tag: adTag,
       });
       editForm.newMediaPreviews.forEach((url) => URL.revokeObjectURL(url));
       await onSaved();
       onOpenChange(false);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Failed to update ad:", error);
-      alert("Failed to update ad. Please try again.");
+      const message = error instanceof Error ? error.message : "Failed to update ad. Please try again.";
+      alert(message);
     } finally {
       setUpdating(false);
     }

@@ -2452,22 +2452,50 @@ export async function updateSponsorAdStatus(
 /**
  * Update ad slot for admin-created ads
  * Note: slot is stored as (displaySlot - 1) in database
+ *
+ * Slot capacity is enforced per tag. We refuse the move if the destination slot
+ * is already at capacity within the ad's current tag. Reassigning to the slot
+ * that already holds this ad is a no-op and is allowed.
  */
 export async function updateSponsorAdSlot(
   adId: string,
   slot: AdSlot
 ): Promise<SponsorAd | null> {
   try {
+    const current = (await databases.getDocument(
+      process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!,
+      Collections.SPONSOR_ADS,
+      adId
+    )) as unknown as SponsorAd;
+    const storedSlot = slot - 1;
+    if (current.slot !== storedSlot) {
+      const maxUsage = getSlotMaxUsage(slot);
+      const tagValue = current.tag || "";
+      const existing = await databases.listDocuments(
+        process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!,
+        Collections.SPONSOR_ADS,
+        [
+          Query.equal("isAdminCreated", true),
+          Query.equal("slot", storedSlot),
+          Query.equal("tag", tagValue),
+          Query.notEqual("$id", adId),
+          Query.limit(maxUsage + 1),
+        ]
+      );
+      if (existing.total >= maxUsage) {
+        throw new Error(`Slot ${slot} is already full (max ${maxUsage})`);
+      }
+    }
     const doc = await databases.updateDocument(
       process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!,
       Collections.SPONSOR_ADS,
       adId,
-      { slot: slot - 1 } // Store as slot - 1
+      { slot: storedSlot }
     );
     return doc as unknown as SponsorAd;
   } catch (error) {
     console.error("Error updating sponsor ad slot:", error);
-    return null;
+    throw error;
   }
 }
 
@@ -2495,7 +2523,7 @@ export async function updateSponsorAd(
 ): Promise<SponsorAd | null> {
   try {
     const updateData: Record<string, unknown> = {};
-    
+
     if (input.title !== undefined) updateData.title = input.title;
     if (input.description !== undefined) updateData.description = input.description;
     if (input.media !== undefined) updateData.media = input.media;
@@ -2509,6 +2537,37 @@ export async function updateSponsorAd(
     if (input.website !== undefined) updateData.website = input.website;
     if (input.tag !== undefined) updateData.tag = input.tag;
 
+    // Tag-scoped slot capacity guard. Only run when slot or tag is actually changing.
+    if (input.slot !== undefined || input.tag !== undefined) {
+      const current = (await databases.getDocument(
+        process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!,
+        Collections.SPONSOR_ADS,
+        adId
+      )) as unknown as SponsorAd;
+      const nextStoredSlot = input.slot !== undefined ? input.slot - 1 : current.slot;
+      const nextTag = input.tag !== undefined ? input.tag : current.tag || "";
+      const slotChanged = nextStoredSlot !== current.slot;
+      const tagChanged = (current.tag || "") !== nextTag;
+      if (slotChanged || tagChanged) {
+        const displaySlot = (nextStoredSlot ?? 0) + 1;
+        const maxUsage = getSlotMaxUsage(displaySlot);
+        const existing = await databases.listDocuments(
+          process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!,
+          Collections.SPONSOR_ADS,
+          [
+            Query.equal("isAdminCreated", true),
+            Query.equal("slot", nextStoredSlot ?? -1),
+            Query.equal("tag", nextTag),
+            Query.notEqual("$id", adId),
+            Query.limit(maxUsage + 1),
+          ]
+        );
+        if (existing.total >= maxUsage) {
+          throw new Error(`Slot ${displaySlot} is already full (max ${maxUsage})`);
+        }
+      }
+    }
+
     const doc = await databases.updateDocument(
       process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!,
       Collections.SPONSOR_ADS,
@@ -2518,7 +2577,7 @@ export async function updateSponsorAd(
     return doc as unknown as SponsorAd;
   } catch (error) {
     console.error("Error updating sponsor ad:", error);
-    return null;
+    throw error;
   }
 }
 
@@ -2695,12 +2754,16 @@ export async function createSponsorAd(input: CreateSponsorAdInput): Promise<Spon
   try {
     const storedSlot = input.slot - 1;
     const maxUsage = getSlotMaxUsage(input.slot);
+    // Slot scarcity is scoped per tag (Home / Event / Exchange) — the admin grid is
+    // segmented by tag, so the "slot full" guard must be too. Treat missing tag as "".
+    const slotTag = input.tag || "";
     const existing = await databases.listDocuments(
       process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!,
       Collections.SPONSOR_ADS,
       [
         Query.equal("isAdminCreated", true),
         Query.equal("slot", storedSlot),
+        Query.equal("tag", slotTag),
         Query.limit(maxUsage + 1),
       ]
     );
@@ -2756,17 +2819,24 @@ export interface SlotUsageInfo {
  * Get slot usage counts (how many times each slot is used by admin-created active ads)
  * Only checks admin-created ads - regular user ads don't affect admin slot availability
  * Note: Database stores slot as (displaySlot - 1), so we convert back to display value
+ *
+ * Slots are scoped per tag (Home / Event / Exchange). Pass `tag` to count usage
+ * within that tab only; omit it to count across every tab (legacy behaviour).
  */
-export async function getSlotUsageCounts(): Promise<SlotUsageInfo> {
+export async function getSlotUsageCounts(tag?: AdTagType): Promise<SlotUsageInfo> {
   try {
+    const queries = [
+      Query.equal("isAdminCreated", true),
+      Query.isNotNull("slot"),
+      Query.limit(1000),
+    ];
+    if (tag !== undefined) {
+      queries.push(Query.equal("tag", tag));
+    }
     const res = await databases.listDocuments(
       process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID!,
       Collections.SPONSOR_ADS,
-      [
-        Query.equal("isAdminCreated", true),
-        Query.isNotNull("slot"),
-        Query.limit(1000),
-      ]
+      queries
     );
 
     const usageCounts: SlotUsageInfo = {};

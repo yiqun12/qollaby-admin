@@ -245,10 +245,10 @@ export function AdminAdsPanel({ tag, title, description, headerIcon: HeaderIcon 
 
   useEffect(() => {
     if (showCreateDialog) {
-      getSlotUsageCounts().then(setSlotUsageCounts);
+      getSlotUsageCounts(tag).then(setSlotUsageCounts);
       getCategories().then(setDynamicCategories);
     }
-  }, [showCreateDialog]);
+  }, [showCreateDialog, tag]);
 
   const handleCreateLocationChange = (location: PlaceValue | null) => {
     if (location?.state) {
@@ -347,7 +347,7 @@ export function AdminAdsPanel({ tag, title, description, headerIcon: HeaderIcon 
   };
 
   const handleClickEmptySlot = async (displaySlot: AdSlot) => {
-    const usage = await getSlotUsageCounts();
+    const usage = await getSlotUsageCounts(tag);
     setSlotUsageCounts(usage);
 
     setCreateForm({
